@@ -45,6 +45,10 @@
         "TALENT_SPEC_SECONDARY",
         "HELPFRAME_CHARACTER_BULLET5",
         "TALENT_MICRO_BUTTON_NO_SPEC",
-        "LE_EXPANSION_CATACLYSM"
+        "LE_EXPANSION_CATACLYSM",
+        "CalendarFrame",
+        "CalendarCloseButton",
+        "UIParentLoadAddOn",
+        "CalendarFrame_OpenEvent"
     ]
 }
