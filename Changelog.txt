@@ -1,0 +1,84 @@
+# Change Log
+All notable changes to this project will be documented in this file.
+
+## [1.0.7] - 2026.02.18.
+
+### Added
+- Added Recruitment Memo feature (Save and manage recruitment memo in-game)
+
+### Changed
+ 
+### Fixed
+
+--------
+
+## [1.0.6] - 2026.02.17.
+
+### Added
+- Support `enUS` locale
+
+### Changed
+ 
+### Fixed
+
+--------
+
+## [1.0.5] - 2026.02.16.
+
+### Added
+
+### Changed
+ 
+### Fixed
+- Fixed an issue where Synergy frame would still appear even when all or individual options were disabled.
+
+--------
+
+## [1.0.4] - 2026.02.15.
+
+### Added
+- Added an option to enable all settings at once.
+- Added an option to play sound in the background.
+- Added a toggle for the Synergy Frame overlay:
+    - Overlay Disabled: Displayed only when the Looking For Group (LFG) window is active.
+    - Overlay Enabled: Synergy window is always visible, but hidden during combat.
+
+### Changed
+ 
+### Fixed
+
+--------
+
+## [1.0.3] - 2026.02.14.
+
+### Added
+
+### Changed
+- Added synergy armor options (Preparing for Midnight)
+- Synergy frame position is now saved
+ 
+### Fixed
+- Fixed class count display for each class
+
+--------
+
+## [1.0.2] - 2026.02.13.
+
+### Added
+
+### Changed
+ 
+### Fixed
+- cursefoge upload file
+
+--------
+
+## [1.0.0] - 2026.02.13.
+
+This is first release
+ 
+### Added
+
+### Changed
+ 
+### Fixed
