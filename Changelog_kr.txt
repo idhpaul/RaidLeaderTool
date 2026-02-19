@@ -1,6 +1,18 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [1.0.8] - 2026.02.19.
+
+### Added
+- 시너지 아이콘 뷰 추가
+
+### Changed
+- 사운드 재생 로직 수정(파티 신청왔을때만 소리 재생, 취소, 거절등은 무시)
+
+### Fixed
+
+--------
+
 ## [1.0.7] - 2026.02.18.
 
 ### Added

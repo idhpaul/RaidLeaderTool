@@ -1,6 +1,18 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [1.0.8] - 2026.02.19.
+
+### Added
+- Added Synergy Icon View
+
+### Changed
+- Edit sound playback logic(Play sound only for group applicant)
+
+### Fixed
+
+--------
+
 ## [1.0.7] - 2026.02.18.
 
 ### Added
