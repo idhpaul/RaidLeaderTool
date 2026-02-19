@@ -307,6 +307,7 @@ function rlt:OnEnable()
     self:Print(ADDON_NAME.."("..CURRENT_VERSION..")- /rlt or /공장툴 ")
 
     self:RegisterEvent("LFG_LIST_APPLICANT_UPDATED")
+    self:RegisterEvent("LFG_LIST_ACTIVE_ENTRY_UPDATE")
     self:RegisterEvent("GROUP_ROSTER_UPDATE")
     self:RegisterEvent("GROUP_JOINED")
     self:RegisterEvent("GROUP_LEFT")
@@ -358,37 +359,78 @@ end
 ---
 
 rlt.lastLfgAlertTime = 0
+rlt.lastApplicantCount = 0
 
 function rlt:LFG_LIST_APPLICANT_UPDATED()
 
-    local isLeader = UnitIsGroupLeader("player")
-    local isAssistant = UnitIsGroupAssistant("player")
-    local currentTime = GetTime()
+    -- 1. 기본 권한 및 옵션 체크
+    if not self.db.global.optGlobalEnable or not self.db.global.optLfgAlert then 
+        return 
+    end
 
-    if not self.db.global.optGlobalEnable then 
+    -- 모집 중이 아니면 숫자를 0으로 고정하고 종료
+    if not C_LFGList.HasActiveEntryInfo() then
+        self.lastApplicantCount = 0
         return 
     end
     
+    local isLeader = UnitIsGroupLeader("player")
+    local isAssistant = UnitIsGroupAssistant("player")
     if not (isLeader or isAssistant) then 
         return 
     end
 
-    if self.db.global.optLfgAlert then
+    -- 2. 현재 모든 신청자 ID 리스트 가져오기
+    local applicants = C_LFGList.GetApplicants()
+    local activeCount = 0
+    local currentTime = GetTime()
 
-        if (currentTime - self.lastLfgAlertTime) < 3 then
+    -- 3. [핵심] 잔상을 제거하고 실제 '대기 중'인 인원만 카운트
+    for _, applicantID in ipairs(applicants) do
+        local info = C_LFGList.GetApplicantInfo(applicantID)
+        -- 상태가 "applied"인 경우(실제 대기 중)만 유효 숫자로 인정
+        -- 취소(cancelled)나 거절된 잔상은 카운트에서 제외됨
+        if info and (info.pendingApplicationStatus == "applied" or info.isNew) then
+            activeCount = activeCount + 1
+        end
+    end
+
+    -- 4. 실제 유효 신청자가 이전보다 늘어났을 때만 알림 실행
+    if activeCount > (self.lastApplicantCount or 0) then
+        
+        -- 3초 쿨타임 체크 (연속 알람 방지)
+        if (currentTime - (self.lastLfgAlertTime or 0)) < 3 then
+            self.lastApplicantCount = activeCount -- 숫자 동기화는 수행
             return 
         end
+
         self.lastLfgAlertTime = currentTime
 
+        -- [알림 액션]
         self:ShowText(L["newLfgAlertText"], 5)
-
         self:PlayAlert(self.db.global.optLfgAlertSound)
 
-        if not GroupFinderFrame:IsVisible() then PVEFrame_ShowFrame("GroupFinderFrame")
-            GroupFinderFrameGroupButton3:Click()
+        -- 파티 찾기 창이 닫혀있다면 자동으로 열기
+        if not GroupFinderFrame:IsVisible() then 
+            PVEFrame_ShowFrame("GroupFinderFrame")
+            -- '내 파티 등록' 탭(보통 3번 버튼) 클릭
+            if GroupFinderFrameGroupButton3 then 
+                GroupFinderFrameGroupButton3:Click() 
+            end
         end
 
+        -- 작업표시줄 아이콘 깜빡임
         FlashClientIcon()
+    end
+
+    -- 5. 현재 실제 유효 인원수로 상태 동기화 (거절/취소 발생 시에도 정확한 숫자로 업데이트)
+    self.lastApplicantCount = activeCount
+end
+
+function rlt:LFG_LIST_ACTIVE_ENTRY_UPDATE()
+    -- 모집글이 사라졌다면 다음을 위해 카운트 초기화
+    if not C_LFGList.HasActiveEntryInfo() then
+        self.lastApplicantCount = 0
     end
 end
 
@@ -701,273 +743,6 @@ function rlt:UpdateSynergyDisplay()
     
     C_Timer.After(0.05, function() self:UpdateSynergyFrameSize() end)
 end
--- function rlt:GetSynergyText()
---     local numGroup = GetNumGroupMembers()
---     local isRaid = IsInRaid()
---     local prefix = isRaid and "raid" or "party"
-    
---     local classes = {"WARRIOR", "PALADIN", "HUNTER", 
---                         "ROGUE", "PRIEST", "DEATHKNIGHT", 
---                         "SHAMAN", "MAGE", "WARLOCK", 
---                         "MONK", "DRUID", "DEMONHUNTER", "EVOKER"}
---     local localized = {WARRIOR=L["warrior"], PALADIN=L["paladin"], HUNTER=L["hunter"], 
---                         ROGUE=L["rogue"], PRIEST=L["priest"], DEATHKNIGHT=L["deathknight"], 
---                         SHAMAN=L["shaman"], MAGE=L["mage"], WARLOCK=L["warlock"], 
---                         MONK=L["monk"], DRUID=L["druid"], DEMONHUNTER=L["demonhunter"], EVOKER=L["evoker"]}
-    
---     local classCount = {}
---     for _, c in ipairs(classes) do classCount[c] = 0 end
---     local roleCount = {TANK = 0, HEALER = 0, DAMAGER = 0, NONE = 0}
---     local tierCount = {DREADFUL = 0, MYSTIC = 0, VENERATED = 0, ZENITH = 0}
---     local tierGroups = {DREADFUL = {"PRIEST", "MAGE", "WARLOCK"}, 
---                         MYSTIC = {"ROGUE", "MONK", "DRUID", "DEMONHUNTER"}, 
---                         VENERATED = {"HUNTER", "SHAMAN", "EVOKER"}, 
---                         ZENITH = {"WARRIOR", "PALADIN", "DEATHKNIGHT"}}
-
---     local classictierCount = {CONQUEROR = 0, PROTECTOR = 0, VANQUISHER = 0, DEATH = 0}
---     local classictierGroups = {CONQUEROR = {"PALADIN", "PRIEST", "SHAMAN"}, 
---                                 PROTECTOR = {"WARRIOR", "ROGUE", "MONK", "EVOKER"}, 
---                                 VANQUISHER = {"HUNTER", "MAGE", "DRUID"}, 
---                                 DEATH = {"DEATHKNIGHT", "WARLOCK", "DEMONHUNTER"}}
-
---     local total = 0
---     local maxIdx = isRaid and numGroup or (numGroup > 0 and numGroup or 0)
-    
---     for i = 1, maxIdx do
---         local unit = prefix..i
---         if UnitExists(unit) then
---             local _, class = UnitClass(unit)
---             if class then
---                 total = total + 1
---                 classCount[class] = classCount[class] + 1
---                 local role = UnitGroupRolesAssigned(unit)
---                 roleCount[role] = (roleCount[role] or 0) + 1
---             end
---         end
---     end
-
---     if not isRaid or numGroup == 0 then
---         local _, class = UnitClass("player")
---         if not isRaid and classCount[class] == 0 then
---             total = total + 1
---             classCount[class] = 1
---             roleCount[UnitGroupRolesAssigned("player")] = (roleCount[UnitGroupRolesAssigned("player")] or 0) + 1
---         end
---     end
-
---     for group, list in pairs(tierGroups) do
---         for _, c in ipairs(list) do tierCount[group] = tierCount[group] + (classCount[c] or 0) end
---     end
-
---     for group, list in pairs(classictierGroups) do
---         for _, c in ipairs(list) do classictierCount[group] = classictierCount[group] + (classCount[c] or 0) end
---     end
-
---     local header = string.format(L["synergyTotalSummaryFormat"], total, roleCount.TANK, roleCount.HEALER, roleCount.DAMAGER)
---     local tierStr = string.format(L["synergyTotalTierFormat"], tierCount.DREADFUL, tierCount.MYSTIC, tierCount.VENERATED, tierCount.ZENITH)
---     local classictierStr = string.format(L["synergyTotalClassicTierFormat"], classictierCount.CONQUEROR, classictierCount.PROTECTOR, classictierCount.VANQUISHER, classictierCount.DEATH)
---     local classStr = "\n"
---     for i, class in ipairs(classes) do
---         local color = RAID_CLASS_COLORS[class].colorStr
---         local mark = (classCount[class] > 0) and "|cff00ff00O|r" or "|cffff0000X|r"
---         local cnt = (classCount[class] >= 1) and "("..classCount[class]..")" or ""
---         classStr = classStr .. string.format("|c%s%s|r : %s%s\n", color, localized[class], mark, cnt)
---     end
---     return "\n\n" ..header .. tierStr ..classictierStr .. "\n" .. classStr
--- end
-
--- function rlt:GetSynergyIcon()
---     local classData = {
---         {id="PRIEST", name="사제", icon=626004}, {id="MAGE", name="마법사", icon=626001}, {id="WARLOCK", name="흑마법사", icon=626007}, {id=nil},
---         {id="HUNTER", name="사냥꾼", icon=626000}, {id="SHAMAN", name="주술사", icon=626006}, {id="EVOKER", name="기원사", icon=4574311}, {id=nil},
---         {id="ROGUE", name="도적", icon=626005}, {id="DRUID", name="드루이드", icon=625999}, {id="MONK", name="수도사", icon=626002}, {id="DEMONHUNTER", name="악마사냥꾼", icon=1260827},
---         {id="WARRIOR", name="전사", icon=626008}, {id="PALADIN", name="성기사", icon=626003}, {id="DEATHKNIGHT", name="죽음의 기사", icon=135771}, {id=nil}
---     }
-
---     local iconSize = 40
---     local spacingX = 16  -- 아이콘 사이 가로 간격을 4px로 극축소
---     local rowHeight = 70 -- 아이콘+텍스트 포함 한 행의 높이를 54px로 압축
-
---     local mainFrame = CreateFrame("Frame", "ClassMonitorMainFrame", UIParent)
---     mainFrame:SetSize((iconSize + spacingX) * 4, rowHeight * 4)
---     mainFrame:SetPoint("CENTER")
-
---     for i, data in ipairs(classData) do
---         if data.id then
---             local f = CreateFrame("Frame", nil, mainFrame)
---             f:SetSize(iconSize, iconSize)
-            
---             local col = (i-1) % 4
---             local row = math.floor((i-1) / 4)
---             f:SetPoint("TOPLEFT", col * (iconSize + spacingX), -row * rowHeight)
-
---             -- 1. 아이콘 (정사각형)
---             f.tex = f:CreateTexture(nil, "ARTWORK")
---             f.tex:SetAllPoints()
---             f.tex:SetTexture(data.icon)
---             f.tex:SetDesaturated(true)
-
---             -- 2. 클래스 명칭 ([사제]) - 아이콘 하단에 바짝 붙임
---             f.nameText = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
---             f.nameText:SetFont(f.nameText:GetFont(), 12, "OUTLINE") 
---             f.nameText:SetPoint("TOP", f, "BOTTOM", 0, 8) 
---             f.nameText:SetText("[" .. data.name .. "]")
---             f.nameText:SetTextColor(0.7, 0.7, 0.7)
-
---             -- 3. 인원수 (x0) - 명칭 바로 아래 밀착
---             f.countText = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
---             f.countText:SetFont(f.countText:GetFont(), 15, "THICKOUTLINE")
---             f.countText:SetPoint("TOP", f.nameText, "BOTTOM", 0, -3) 
---             f.countText:SetText("x0")
---         end
---     end
--- end
-
--- function rlt:UpdateSynergyFrameSize()
---     if not self.SynergyFrameText or not self.SynergyFrame then return end
-    
---     -- 텍스트의 실제 너비와 높이 계산
---     local textWidth = self.SynergyFrameText:GetStringWidth()
---     local textHeight = self.SynergyFrameText:GetStringHeight()
-
---     -- 1. 폭(Width) 설정 (양옆 여백 20px 추가)
---     local targetWidth = textWidth + 20
-    
---     -- (옵션) 너무 좁거나 넓어지지 않게 제한 설정
---     if targetWidth < 100 then targetWidth = 100 end -- 최소폭
---     if targetWidth > 400 then targetWidth = 400 end -- 최대폭
-
---     self.SynergyFrame:SetWidth(targetWidth)
-
---     -- 2. 높이(Height) 설정 (상하 여백 35px 추가)
---     self.SynergyFrame:SetHeight(textHeight + 35)
--- end
-
--- function rlt:CreateSynergyUI()
---     if self.SynergyFrame then return end
-
---     -- 1. 텍스트 프레임 (이제 이 프레임이 메인이자 드래그 핸들)
---     local display = CreateFrame("Frame", "RLT_SynergyFrame", UIParent, "BackdropTemplate")
---     local pos = self.db.global.groupSynergyPos
---     display:SetPoint(pos.point, UIParent, pos.point, pos.x, pos.y)
---     display:SetWidth(350)
---     display:SetMovable(true)
---     display:SetClampedToScreen(true)
---     display:SetBackdrop({ 
---         bgFile = "Interface\\ChatFrame\\ChatFrameBackground", 
---         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", 
---         tile = true, tileSize = 16, edgeSize = 16, 
---         insets = { left = 4, right = 4, top = 4, bottom = 4 } 
---     })
---     display:SetBackdropColor(0, 0, 0, 0.9)
---     display:EnableMouse(true)
---     self.SynergyFrame = display
-
---     -- 2. 드래그 로직 (프레임 직접 조작)
---     display:RegisterForDrag("LeftButton")
---     display:SetScript("OnDragStart", function(self) self:StartMoving() end)
---     display:SetScript("OnDragStop", function(self)
---         self:StopMovingOrSizing()
---         local point, _, _, x, y = self:GetPoint()
---         rlt.db.global.groupSynergyPos = { point = point, x = x, y = y }
---     end)
-
---     -- 3. 오버레이 토글 컨테이너
---     local toggleContainer = CreateFrame("Frame", nil, display, "BackdropTemplate")
---     toggleContainer:SetSize(130, 30) -- 텍스트와 버튼이 들어갈 크기
---     toggleContainer:SetPoint("TOPRIGHT", display, "TOPRIGHT", -8, -8)
---     toggleContainer:SetBackdrop({
---         bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
---         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", -- 얇은 테두리
---         tile = true, tileSize = 16, edgeSize = 12,
---         insets = { left = 3, right = 3, top = 3, bottom = 3 }
---     })
---     toggleContainer:SetBackdropColor(0.2, 0.2, 0.2, 0.8) -- 버튼 영역만 약간 더 밝게
---     toggleContainer:SetBackdropBorderColor(1, 0.82, 0, 1) -- 황금색 테두리로 강조
-
---     local toggleBtn = CreateFrame("CheckButton", nil, toggleContainer, "UICheckButtonTemplate")
---     toggleBtn:SetSize(22, 22)
---     toggleBtn:SetPoint("RIGHT", toggleContainer, "RIGHT", -5, 0)
---     toggleBtn.text = toggleBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
---     toggleBtn.text:SetPoint("RIGHT", toggleBtn, "LEFT", -2, 0)
---     toggleBtn.text:SetText(L["synergyOverlayToggleEnable"]) -- 흰색으로 텍스트 강조
-    
---     toggleBtn:SetChecked(self.db.global.optGroupSynergyOverlay)
-
---     toggleContainer:SetScript("OnEnter", function()
---         GameTooltip:SetOwner(toggleBtn, "ANCHOR_RIGHT")
---         GameTooltip:SetText(L["synergyOverlayTooltipTitle"], 1, 1, 1)
---         GameTooltip:AddLine(L["synergyOverlayTooltipCheckText"], 1, 0.82, 0, true)
---         GameTooltip:AddLine(L["synergyOverlayTooltipUnCheckText"], 1, 0.82, 0, true)
---         GameTooltip:AddLine(L["synergyOverlayTooltipUnHideText"], 0.5, 0.5, 0.5, true)
---         GameTooltip:Show()
---     end)
---     toggleContainer:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
---     toggleBtn:SetScript("OnClick", function(cb)
---         self.db.global.optGroupSynergyOverlay = cb:GetChecked()
---         self:UpdateSynergyVisibility()
---     end)
-
---     -- 4. 텍스트 객체
---     local text = display:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
---     text:SetFont(text:GetFont() or [[Fonts\2002.TTF]], 15, "OUTLINE")
---     text:SetPoint("TOPLEFT", 12, -12)
---     text:SetJustifyH("LEFT")
---     text:SetSpacing(3)
---     self.SynergyFrameText = text
-
---     -- 5. PVEFrame 후킹
---     if not self.pveHooked then
---         hooksecurefunc("PVEFrame_ShowFrame", function() self:UpdateSynergyVisibility() end)
---         if PVEFrame then
---             PVEFrame:HookScript("OnHide", function() self:UpdateSynergyVisibility() end)
---         end
---         self.pveHooked = true
---     end
-
---     -- 높이 조절 후킹
---     hooksecurefunc(text, "SetText", function() self:UpdateSynergyFrameSize() end)
-
---     -- 초기 상태 적용
---     self:UpdateSynergyVisibility()
--- end
-
--- function rlt:UpdateSynergyVisibility()
---     if not self.db.global.optGlobalEnable or not self.db.global.optGroupSynergy then
---         if self.SynergyFrame then 
---             self.SynergyFrame:Hide() 
---         end
-
---         return
---     end
-
---     if not self.SynergyFrame then 
---         return 
---     end
-
---     local inGroup = IsInGroup()
---     local isOverlay = self.db.global.optGroupSynergyOverlay
---     local isPveOpen = PVEFrame and PVEFrame:IsShown()
---     local inCombat = UnitAffectingCombat("player") -- [추가] 전투 여부 확인
-
---     -- 1. 그룹이 아니거나 '전투 중'이면 무조건 숨김
---     if not inGroup or inCombat then
---         self.SynergyFrame:Hide()
---         return
---     end
-
---     -- 2. 비전투 상태 + 그룹인 경우: 오버레이 ON 또는 파티찾기(H) 창이 열려 있을 때 표시
---     if isOverlay or isPveOpen then
---         self.SynergyFrame:Show()
---         if self.SynergyFrameText then
---             self.SynergyFrameText:SetText(self:GetSynergyText())
---         end
---         rlt.SynergyIconUI()
---     else
---         self.SynergyFrame:Hide()
---     end
--- end
 
 ---
 --- 파티 모집글
