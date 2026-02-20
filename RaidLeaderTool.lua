@@ -311,8 +311,8 @@ function rlt:OnEnable()
     self:RegisterEvent("GROUP_ROSTER_UPDATE")
     self:RegisterEvent("GROUP_JOINED")
     self:RegisterEvent("GROUP_LEFT")
-    self:RegisterEvent("PLAYER_REGEN_DISABLED", "UpdateSynergyVisibility")
-    self:RegisterEvent("PLAYER_REGEN_ENABLED", "UpdateSynergyVisibility")
+    self:RegisterEvent("PLAYER_REGEN_DISABLED", function() self:UpdateSynergyVisibility() end)
+    self:RegisterEvent("PLAYER_REGEN_ENABLED", function() self:UpdateSynergyVisibility() end)
     self:RegisterEvent("LFG_LIST_ENTRY_EXPIRED_TIMEOUT")
 
     if IsInGroup() then self:GROUP_JOINED() end
@@ -540,28 +540,13 @@ function rlt:GetSynergyData()
     return data
 end
 
--- 2. 프레임 크기 동적 조절
-function rlt:UpdateSynergyFrameSize()
-    if not self.SynergyFrame then return end
-    local headerHeight = self.SynergyHeader:GetHeight() or 80
-    local btnAreaHeight = 45 -- 전환 버튼 컨테이너 영역
-    local padding = 40
-
-    if self.db.global.useIconView then
-        self.SynergyFrame:SetSize(245, headerHeight + btnAreaHeight + 270 + padding)
-    else
-        local textWidth = self.SynergyFrameText:GetStringWidth()
-        local textHeight = self.SynergyFrameText:GetStringHeight()
-        self.SynergyFrame:SetSize(math.max(260, textWidth + 40), headerHeight + btnAreaHeight + textHeight + padding)
-    end
-end
-
--- 3. UI 생성
 function rlt:CreateSynergyUI()
     if self.SynergyFrame then return end
 
+    -- [부모 프레임]
     local display = CreateFrame("Frame", "RLT_SynergyFrame", UIParent, "BackdropTemplate")
     local pos = self.db.global.groupSynergyPos
+    display:SetSize(250, 100) 
     display:SetPoint(pos.point, UIParent, pos.point, pos.x, pos.y)
     display:SetMovable(true)
     display:SetClampedToScreen(true)
@@ -570,6 +555,7 @@ function rlt:CreateSynergyUI()
         tile = true, tileSize = 16, edgeSize = 16, insets = { left = 4, right = 4, top = 4, bottom = 4 } 
     })
     display:SetBackdropColor(0, 0, 0, 0.9)
+    display:SetBackdropBorderColor(1, 1, 1, self.db.global.synergyBgAlpha or 0.9)
     display:EnableMouse(true)
     display:RegisterForDrag("LeftButton")
     display:SetScript("OnDragStart", function(s) s:StartMoving() end)
@@ -580,80 +566,216 @@ function rlt:CreateSynergyUI()
     end)
     self.SynergyFrame = display
 
-    -- [우측 상단: 오버레이 토글 컨테이너] (기존 디자인 유지)
-    local overlayContainer = CreateFrame("Frame", nil, display, "BackdropTemplate")
-    overlayContainer:SetSize(130, 30)
-    overlayContainer:SetPoint("TOPRIGHT", display, "TOPRIGHT", -8, -8)
-    overlayContainer:SetBackdrop({
-        bgFile = "Interface\\ChatFrame\\ChatFrameBackground", edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 12, insets = { left = 3, right = 3, top = 3, bottom = 3 }
-    })
-    overlayContainer:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
-    overlayContainer:SetBackdropBorderColor(1, 0.82, 0, 1)
+    local contentWidth = display:GetWidth() - 20
 
-    local overlayBtn = CreateFrame("CheckButton", nil, overlayContainer, "UICheckButtonTemplate")
-    overlayBtn:SetSize(22, 22)
-    overlayBtn:SetPoint("RIGHT", overlayContainer, "RIGHT", -5, 0)
-    overlayBtn.text = overlayBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    overlayBtn.text:SetPoint("RIGHT", overlayBtn, "LEFT", -2, 0)
-    overlayBtn.text:SetText(L["synergyOverlayToggleEnable"])
-    overlayBtn:SetChecked(self.db.global.optGroupSynergyOverlay)
-    overlayBtn:SetScript("OnClick", function(cb)
-        self.db.global.optGroupSynergyOverlay = cb:GetChecked()
-        self:UpdateSynergyVisibility()
+    -- [1. TitlebarContainer] (높이 고정: 30)
+    local TitlebarContainer = CreateFrame("Frame", nil, display, "BackdropTemplate")
+    TitlebarContainer:SetSize(contentWidth, 30)
+    TitlebarContainer:SetPoint("TOPLEFT", display, "TOPLEFT", 3, -3)
+    TitlebarContainer:SetPoint("TOPRIGHT", display, "TOPRIGHT", -3, -3)
+
+    -- 타이틀바 전용 배경 (본체보다 약간 밝게 하여 구분감 생성)
+    TitlebarContainer:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true, tileSize = 16, edgeSize = 1,
+        insets = { left = 0, right = 0, top = 0, bottom = 0 }
+    })
+    TitlebarContainer:SetBackdropColor(0.15, 0.15, 0.15, 0.9) -- 본체보다 진한 회색
+    TitlebarContainer:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.5)
+    self.Titlebar = TitlebarContainer
+
+    -- [1. 알파 슬라이더: MinimalSliderTemplate + 하단 레이블]
+    local alphaSlider = CreateFrame("Slider", "RLT_SynergyAlphaSlider", TitlebarContainer, "MinimalSliderTemplate")
+    alphaSlider:SetPoint("LEFT", TitlebarContainer, "LEFT", 10, 4) -- 레이블 공간을 위해 약간 위로
+    alphaSlider:SetSize(80, 18)
+    alphaSlider:SetMinMaxValues(0, 1.0)
+    alphaSlider:SetValueStep(0.05)
+    alphaSlider:SetObeyStepOnDrag(true)
+    alphaSlider:SetValue(self.db.global.synergyBgAlpha or 0.9)
+
+    -- 슬라이더 바로 밑에 "Alpha" 텍스트 배치
+    local alphaLabel = alphaSlider:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    alphaLabel:SetFont([[Fonts\2002.TTF]], 9, "OUTLINE")
+    alphaLabel:SetPoint("TOP", alphaSlider, "BOTTOM", 0, 2)
+    alphaLabel:SetText("Alpha")
+
+    alphaSlider:SetScript("OnValueChanged", function(s, value)
+        self.db.global.synergyBgAlpha = value
+        display:SetBackdropColor(0, 0, 0, value)
+        display:SetBackdropBorderColor(1, 1, 1, value)
     end)
 
-    -- [좌측 상단: 헤더 정보 (꾸미기 적용)]
-    local headerText = display:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    headerText:SetFont([[Fonts\2002.TTF]], 15, "OUTLINE") -- 폰트 크기 업
-    headerText:SetPoint("TOPLEFT", 15, -15)
+    -- [2. 오버레이 핀 버튼: 자물쇠 아이콘 형태]
+    local pinBtn = CreateFrame("Button", nil, TitlebarContainer)
+    pinBtn:SetSize(45,45) 
+    pinBtn:SetPoint("RIGHT", TitlebarContainer, "RIGHT", 5, 0)
+
+    local pinTex = pinBtn:CreateTexture(nil, "ARTWORK")
+    pinTex:SetAllPoints()
+    pinBtn.tex = pinTex
+
+    -- 상태 업데이트 함수 
+    local function UpdatePinIcon()
+        local isPinned = self.db.global.optGroupSynergyOverlay
+        if isPinned then
+            -- 빨강 핀
+            pinTex:SetTexture([[Interface\AddOns\RaidLeaderTool\Assets\Icons\pinRed]]) 
+            pinBtn.tex:SetVertexColor(1, 1, 1, 1) -- 원본 색상 유지
+        else
+            -- 회색 핀
+            pinTex:SetTexture([[Interface\AddOns\RaidLeaderTool\Assets\Icons\pinGray]])
+            pinBtn.tex:SetVertexColor(1, 1, 1, 0.8) -- 해제 시 약간의 투명도를 주면 더 자연스러움
+        end
+    end
+    UpdatePinIcon()
+
+    -- 툴팁 설정 (마우스 올렸을 때 설명 출력)
+    pinBtn:SetScript("OnEnter", function(s)
+        GameTooltip:SetOwner(s, "ANCHOR_RIGHT")
+        local status = self.db.global.optGroupSynergyOverlay and L["synergyOverlayTooltipTitleEnable"] or L["synergyOverlayTooltipTitleDisable"]
+        GameTooltip:SetText(L["synergyOverlayTooltipTitle"] .. " " .. status)
+        GameTooltip:AddLine(L["synergyOverlayTooltipTitleDiscription"], 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    pinBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    -- 하이라이트 효과 (마우스 올리면 밝아짐)
+    pinBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+
+    pinBtn:SetScript("OnClick", function()
+        self.db.global.optGroupSynergyOverlay = not self.db.global.optGroupSynergyOverlay
+        UpdatePinIcon()
+        self:UpdateSynergyVisibility()
+        
+        -- 클릭 시 툴팁 즉시 갱신
+        if GameTooltip:IsOwned(pinBtn) then
+            pinBtn:GetScript("OnEnter")(pinBtn)
+        end
+    end)
+
+    -- [2. HeaderContainer] (텍스트 양에 따라 가변 높이)
+    local HeaderContainer = CreateFrame("Frame", nil, display)
+    HeaderContainer:SetWidth(contentWidth)
+    HeaderContainer:SetPoint("TOP", TitlebarContainer, "BOTTOM", 0, -10)
+    self.HeaderCont = HeaderContainer
+
+    local headerText = HeaderContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    headerText:SetFont([[Fonts\2002.TTF]], 16, "THICKOUTLINE")
+    headerText:SetPoint("TOPLEFT", HeaderContainer, "TOPLEFT", 5, 0) 
+    headerText:SetWidth(contentWidth) -- 줄바꿈을 위해 너비 고정
     headerText:SetJustifyH("LEFT")
-    headerText:SetSpacing(4)
-    headerText:SetTextColor(1, 0.82, 0) -- 기본 황금색 톤
+    headerText:SetWordWrap(true)
     self.SynergyHeader = headerText
 
-    -- [중앙: 모드 전환 컨테이너 (오버레이 컨테이너 디자인 적용)]
-    local modeContainer = CreateFrame("Frame", nil, display, "BackdropTemplate")
-    modeContainer:SetSize(160, 30)
-    modeContainer:SetPoint("TOPLEFT", headerText, "BOTTOMLEFT", -4, -12)
-    modeContainer:SetBackdrop({
-        bgFile = "Interface\\ChatFrame\\ChatFrameBackground", edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 12, insets = { left = 3, right = 3, top = 3, bottom = 3 }
-    })
-    modeContainer:SetBackdropColor(0.2, 0.2, 0.2, 0.8)
-    modeContainer:SetBackdropBorderColor(0, 0.8, 1, 1) -- 하늘색 테두리로 구분
+    -- [3. ModeButtonContainer] (높이 고정: 25)
+    local ModeButtonContainer = CreateFrame("Frame", nil, display)
+    ModeButtonContainer:SetSize(contentWidth, 30)
+    ModeButtonContainer:SetPoint("TOP", HeaderContainer, "BOTTOM", 0, -15) -- 헤더 아래로 앵커
+    self.ModeBtnCont = ModeButtonContainer
 
-    local viewBtn = CreateFrame("Button", nil, modeContainer)
-    viewBtn:SetAllPoints()
-    viewBtn.text = viewBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    viewBtn.text:SetPoint("CENTER", 0, 0)
-    
+    -- [공통 버튼 생성 함수]
+    local function CreateCustomButton(parent, width, height)
+        local btn = CreateFrame("Button", nil, parent)
+        btn:SetSize(width, height)
+        
+        -- 배경 (반투명 검정)
+        btn.bg = btn:CreateTexture(nil, "BACKGROUND")
+        btn.bg:SetAllPoints()
+        btn.bg:SetColorTexture(0.2, 0.2, 0.2, 0.8)
+        
+        -- 테두리 (회색)
+        btn.border = btn:CreateLine()
+        btn.border:SetColorTexture(0.5, 0.5, 0.5, 1)
+        
+        -- 텍스트 설정
+        btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        btn.text:SetPoint("CENTER")
+        btn.text:SetFont([[Fonts\2002.TTF]], 12, "OUTLINE")
+        
+        -- 호버 효과 (마우스 올렸을 때 색 변화)
+        btn:SetScript("OnEnter", function(self)
+            self.bg:SetColorTexture(0.4, 0.4, 0.4, 0.9)
+            -- 툴팁 추가 (선택 사항)
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:SetText(L["Click to toggle status"]) 
+            GameTooltip:Show()
+        end)
+        btn:SetScript("OnLeave", function(self)
+            self.bg:SetColorTexture(0.2, 0.2, 0.2, 0.8)
+            GameTooltip:Hide()
+        end)
+        
+        return btn
+    end
+
+    -- [3. ModeButtonContainer]
+    local ModeButtonContainer = CreateFrame("Frame", nil, display)
+    ModeButtonContainer:SetSize(contentWidth, 25)
+    ModeButtonContainer:SetPoint("TOP", HeaderContainer, "BOTTOM", 0, -15)
+    self.ModeBtnCont = ModeButtonContainer
+
+    -- 1. 보기 모드 전환 버튼
+    local viewBtn = CreateCustomButton(ModeButtonContainer, 100, 20)
+    viewBtn:SetPoint("RIGHT", ModeButtonContainer, "RIGHT", -5, 0)
+
+    -- 2. 축약 모드 설정 버튼
+    local shortBtn = CreateCustomButton(ModeButtonContainer, 65, 20)
+    shortBtn:SetPoint("RIGHT", viewBtn, "LEFT", -8, 0)
+
     local function UpdateBtnText()
-        local label = self.db.global.useIconView and "Show Text View" or "Show Icon View"
-        viewBtn.text:SetText("|cff00ff00" .. label .. "|r")
+        -- 보기 모드
+        local viewLabel = self.db.global.useIconView and "Icon View" or "Text View"
+        viewBtn.text:SetText("|cff00ff00" .. viewLabel .. "|r")
+        
+        -- 축약 모드 (텍스트 뷰일 때만 보임)
+        if self.db.global.useIconView then
+            shortBtn:Hide()
+        else
+            shortBtn:Show()
+            local shortLabel = self.db.global.useShortText and "Full" or "Short"
+            shortBtn.text:SetText("|cffffff00" .. shortLabel .. "|r")
+        end
     end
     UpdateBtnText()
 
     viewBtn:SetScript("OnClick", function()
+        PlaySound(856) -- [WoW UI Sounds](https://warcraft.wiki.gg)
         self.db.global.useIconView = not self.db.global.useIconView
         UpdateBtnText()
         self:UpdateSynergyDisplay()
     end)
 
-    -- [하단 데이터 영역]
-    local classText = display:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    classText:SetFont([[Fonts\2002.TTF]], 14, "OUTLINE")
-    classText:SetPoint("TOPLEFT", modeContainer, "BOTTOMLEFT", 4, -15)
+    shortBtn:SetScript("OnClick", function()
+        PlaySound(856)
+        self.db.global.useShortText = not self.db.global.useShortText
+        UpdateBtnText()
+        self:UpdateSynergyDisplay()
+    end)
+
+    -- [4. DataContainer] (모드에 따라 가변 높이)
+    local DataContainer = CreateFrame("Frame", nil, display)
+    DataContainer:SetWidth(contentWidth)
+    DataContainer:SetPoint("TOP", ModeButtonContainer, "BOTTOM", 0, -10)
+    self.DataCont = DataContainer
+
+    -- 텍스트 뷰
+    local classText = DataContainer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    classText:SetFont([[Fonts\2002.TTF]], 18, "THICKOUTLINE")
+    classText:SetSpacing(12)
+    classText:SetWidth(contentWidth - 10)
+    classText:SetPoint("TOPLEFT", DataContainer, "TOPLEFT", 10, 0)
     classText:SetJustifyH("LEFT")
+    classText:SetWordWrap(true)
     self.SynergyFrameText = classText
 
-    local iconGroup = CreateFrame("Frame", nil, display)
-    iconGroup:SetPoint("TOPLEFT", modeContainer, "BOTTOMLEFT", 4, -15)
-    iconGroup:SetSize(220, 260)
+    -- 아이콘 뷰 그룹
+    local iconGroup = CreateFrame("Frame", nil, DataContainer)
+    iconGroup:SetPoint("TOPLEFT", DataContainer, "TOPLEFT", 15, 0)
+    iconGroup:SetSize(220, 280) -- 아이콘 레이아웃에 따른 고정 높이
     self.IconContainer = iconGroup
     self.IconFrames = {}
 
-    -- 아이콘 레이아웃 생성
     local classLayout = {
         {id="PRIEST", icon=626004, name=L["priest"]}, {id="MAGE", icon=626001, name=L["mage"]}, {id="WARLOCK", icon=626007, name=L["warlock"]}, {id=nil},
         {id="HUNTER", icon=626000, name=L["hunter"]}, {id="SHAMAN", icon=626006, name=L["shaman"]}, {id="EVOKER", icon=4574311, name=L["evoker"]}, {id=nil},
@@ -670,8 +792,11 @@ function rlt:CreateSynergyUI()
             f.tex = f:CreateTexture(nil, "ARTWORK")
             f.tex:SetAllPoints(); f.tex:SetTexture(data.icon)
             f.name = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            f.name:SetFont([[Fonts\2002.TTF]], 10, "OUTLINE"); f.name:SetPoint("TOP", f, "BOTTOM", 0, 2); f.name:SetText(data.name)
+            f.name:SetFont([[Fonts\2002.TTF]], 10, "THICKOUTLINE")
+            f.name:SetPoint("TOP", f, "BOTTOM", 0, 2)
+            f.name:SetText(data.name)
             f.count = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
+            f.count:SetFont([[Fonts\2002.TTF]], 16, "THICKOUTLINE")
             f.count:SetPoint("TOP", f.name, "BOTTOM", 0, 2)
             self.IconFrames[data.id] = f
         end
@@ -685,63 +810,126 @@ function rlt:CreateSynergyUI()
     self:UpdateSynergyVisibility()
 end
 
--- 4. 업데이트 및 출력
-function rlt:UpdateSynergyVisibility()
-    if not self.db.global.optGlobalEnable or not self.db.global.optGroupSynergy then
-        if self.SynergyFrame then self.SynergyFrame:Hide() end
-        return
-    end
-    local inGroup, inCombat = IsInGroup(), UnitAffectingCombat("player")
-    local isOverlay, isPveOpen = self.db.global.optGroupSynergyOverlay, (PVEFrame and PVEFrame:IsShown())
+-- [높이 계산 함수 추가]
+function rlt:UpdateSynergyFrameSize()
+    if not self.SynergyFrame then return end
 
-    if not inGroup or inCombat then
-        if self.SynergyFrame then self.SynergyFrame:Hide() end
-        return
-    end
+    -- 1. 헤더 높이: 텍스트 실제 높이에 맞춤
+    local headerH = self.SynergyHeader:GetStringHeight()
+    self.HeaderCont:SetHeight(headerH + 2)
 
-    if isOverlay or isPveOpen then
-        self.SynergyFrame:Show()
-        self:UpdateSynergyDisplay()
+    -- 2. 데이터 컨테이너 높이: 모드에 따라 결정
+    local dataH = 0
+    if self.db.global.useIconView then
+        dataH = 280 -- 아이콘 레이아웃 높이
     else
-        self.SynergyFrame:Hide()
+        dataH = self.SynergyFrameText:GetStringHeight() + 10
     end
+    self.DataCont:SetHeight(dataH)
+
+    -- 3. 부모 프레임 전체 높이 재계산 (모든 컨테이너 + 마진)
+    local totalHeight = 10 + -- 상단 마진
+                        self.Titlebar:GetHeight() + 10 + 
+                        self.HeaderCont:GetHeight() + 15 + 
+                        self.ModeBtnCont:GetHeight() + 10 + 
+                        self.DataCont:GetHeight() + 20 -- 하단 마진
+    
+    self.SynergyFrame:SetHeight(totalHeight)
 end
 
 function rlt:UpdateSynergyDisplay()
     local data = self:GetSynergyData()
     
-    -- [헤더 정보: 기존 포맷 유지 + 꾸미기만 적용]
+    -- [1. 상단 요약 정보]
     local header = string.format("\n"..L["synergyTotalSummaryFormat"], data.total, data.roleCount.TANK, data.roleCount.HEALER, data.roleCount.DAMAGER)
     local t1 = string.format(L["synergyTotalTierFormat"], data.tierCount.DREADFUL, data.tierCount.MYSTIC, data.tierCount.VENERATED, data.tierCount.ZENITH)
     local t2 = string.format(L["synergyTotalClassicTierFormat"], data.classicTierCount.CONQUEROR, data.classicTierCount.PROTECTOR, data.classicTierCount.VANQUISHER, data.classicTierCount.DEATH)
     
-    -- 첫 줄(총원)은 강조색 적용
     self.SynergyHeader:SetText("|cffffffff" .. header .. "|r\n" .. t1 .. "\n" .. t2)
 
+    -- [2. 하단 상세 정보 (아이콘 vs 텍스트)]
     if self.db.global.useIconView then
+        -- 아이콘 뷰 모드
         self.SynergyFrameText:Hide()
         self.IconContainer:Show()
         for id, f in pairs(self.IconFrames) do
             local count = data.classCount[id] or 0
             f.count:SetText("x"..count)
-            if count > 0 then f.tex:SetDesaturated(false); f.count:SetTextColor(0, 1, 0)
-            else f.tex:SetDesaturated(true); f.count:SetTextColor(0.5, 0.5, 0.5) end
+            
+            -- 아이콘 하단 이름 업데이트 (축약 여부 반영)
+            local nameKey = self.db.global.useShortText and (id:lower() .. "_short") or id:lower()
+            f.name:SetText(L[nameKey] or L[id:lower()])
+
+            if count > 0 then 
+                f.tex:SetDesaturated(false)
+                f.count:SetTextColor(0, 1, 0)
+            else 
+                f.tex:SetDesaturated(true) 
+                f.count:SetTextColor(0.5, 0.5, 0.5) 
+            end
         end
     else
+        -- 텍스트 뷰 모드
         self.IconContainer:Hide()
         self.SynergyFrameText:Show()
+        
         local classStr = ""
         local classes = {"WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST", "DEATHKNIGHT", "SHAMAN", "MAGE", "WARLOCK", "MONK", "DRUID", "DEMONHUNTER", "EVOKER"}
-        for _, class in ipairs(classes) do
+        
+        for i, class in ipairs(classes) do
             local color = RAID_CLASS_COLORS[class].colorStr
-            local mark = (data.classCount[class] > 0) and "|cff00ff00O|r" or "|cffff0000X|r"
-            local cnt = (data.classCount[class] > 0) and "("..data.classCount[class]..")" or ""
-            classStr = classStr .. string.format("|c%s%s|r : %s %s\n", color, L[class:lower()], mark, cnt)
+            local hasClass = (data.classCount[class] or 0) > 0
+            local mark = hasClass and "|cff00ff00O|r" or "|cffff0000X|r"
+            local cnt = hasClass and "("..data.classCount[class]..")" or ""
+            
+            if self.db.global.useShortText then
+                local shortName = L[class:lower() .. "_short"] or L[class:lower()]
+                -- 축약
+                classStr = classStr .. string.format("|c%s%s|r : %s %s\n", color, shortName, mark, cnt)
+            else
+                -- 일반
+                classStr = classStr .. string.format("|c%s%s|r : %s %s\n", color, L[class:lower()], mark, cnt)
+            end
         end
+        
         self.SynergyFrameText:SetText(classStr)
     end
     
-    C_Timer.After(0.05, function() self:UpdateSynergyFrameSize() end)
+    -- 텍스트 렌더링 후 프레임 높이 계산을 위한 지연 실행
+    -- [C_Timer.After](https://warcraft.wiki.gg) 사용
+    C_Timer.After(0.05, function() 
+        if self.UpdateSynergyFrameSize then
+            self:UpdateSynergyFrameSize() 
+        end
+    end)
+end
+
+function rlt:UpdateSynergyVisibility()
+    -- 설정에서 비활성화했거나 프레임이 없으면 중단
+    if not self.db.global.optGlobalEnable or not self.db.global.optGroupSynergy then
+        if self.SynergyFrame then self.SynergyFrame:Hide() end
+        return
+    end
+
+    local inGroup = IsInGroup()
+    local inCombat = UnitAffectingCombat("player")
+    local isOverlay = self.db.global.optGroupSynergyOverlay
+    local isPveOpen = (PVEFrame and PVEFrame:IsShown())
+
+    -- 파티 중이 아니거나 전투 중이면 숨김 (전투 중 팝업 방지)
+    if not inGroup or inCombat then
+        if self.SynergyFrame then self.SynergyFrame:Hide() end
+        return
+    end
+
+    -- 오버레이 모드이거나 던전찾기(PVE) 창이 열려있을 때만 표시
+    if isOverlay or isPveOpen then
+        if not self.SynergyFrame then self:CreateSynergyUI() end -- 프레임 없으면 생성
+        self.SynergyFrame:Show()
+        self:UpdateSynergyDisplay()
+    else
+        if self.SynergyFrame then self.SynergyFrame:Hide() end
+    end
 end
 
 ---
