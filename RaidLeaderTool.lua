@@ -12,7 +12,7 @@ local LDBIcon			= LibStub("LibDBIcon-1.0")
 
 local ADDON_NAME = "RaidLeaderTool"
 local ADDON_DB_NAME = "RaidLeaderToolDB"
-local CURRENT_VERSION		= "1.0.8"
+local CURRENT_VERSION		= "1.0.9"
 
 local Default_PROFILE = {
     global = {
@@ -543,6 +543,8 @@ end
 function rlt:CreateSynergyUI()
     if self.SynergyFrame then return end
 
+    local initialAlpha = self.db.global.synergyBgAlpha or 0.9
+
     -- [부모 프레임]
     local display = CreateFrame("Frame", "RLT_SynergyFrame", UIParent, "BackdropTemplate")
     local pos = self.db.global.groupSynergyPos
@@ -554,8 +556,8 @@ function rlt:CreateSynergyUI()
         bgFile = "Interface\\ChatFrame\\ChatFrameBackground", edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", 
         tile = true, tileSize = 16, edgeSize = 16, insets = { left = 4, right = 4, top = 4, bottom = 4 } 
     })
-    display:SetBackdropColor(0, 0, 0, 0.9)
-    display:SetBackdropBorderColor(1, 1, 1, self.db.global.synergyBgAlpha or 0.9)
+    display:SetBackdropColor(0, 0, 0, initialAlpha)
+    display:SetBackdropBorderColor(1, 1, 1, initialAlpha)
     display:EnableMouse(true)
     display:RegisterForDrag("LeftButton")
     display:SetScript("OnDragStart", function(s) s:StartMoving() end)
@@ -592,7 +594,7 @@ function rlt:CreateSynergyUI()
     alphaSlider:SetMinMaxValues(0, 1.0)
     alphaSlider:SetValueStep(0.05)
     alphaSlider:SetObeyStepOnDrag(true)
-    alphaSlider:SetValue(self.db.global.synergyBgAlpha or 0.9)
+    alphaSlider:SetValue(initialAlpha)
 
     -- 슬라이더 바로 밑에 "Alpha" 텍스트 배치
     local alphaLabel = alphaSlider:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
