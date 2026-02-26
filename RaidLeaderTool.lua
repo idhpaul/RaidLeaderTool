@@ -650,7 +650,7 @@ function rlt:UpdateTimerDisplay()
 end
 
 StaticPopupDialogs["RLT_EXPIRATION_WARNING"] = {
-    text = "|cffffd100[RaidLeaderTool]|r\n\n|cffff4444파티 모집 만료 3분 전입니다!|r\n\n아래 단계를 실행하면 대기 시간이 |cff00ff00갱신|r됩니다.\n|cffffff00[편집]|r 클릭 -> |cffffff00[작성 완료]|r 클릭\n\n|cff888888(내용을 수정하지 않아도 버튼만 누르면 갱신됩니다)|r",
+    text = "|cffffd100[RaidLeaderTool]|r\n\n|cffff4444파티 모집 만료 3분 전입니다!|r\n\n아래 단계를 실행하면 대기 시간이 |cff00ff00갱신|r됩니다.\n|cffffff00[편집]|r 클릭 -> |cffffff00[작성 완료]|r 클릭\n\n|cff888888(내용을 수정하지 않아도 만료 타이머 갱신됩니다)|r",
     button1 = "확인",
     timeout = 0,
     whileDead = true,
@@ -704,17 +704,11 @@ function rlt:GetSynergyData()
         DREADFUL = {"PRIEST", "MAGE", "WARLOCK"}, MYSTIC = {"ROGUE", "MONK", "DRUID", "DEMONHUNTER"}, 
         VENERATED = {"HUNTER", "SHAMAN", "EVOKER"}, ZENITH = {"WARRIOR", "PALADIN", "DEATHKNIGHT"}
     }
-    local classicTierGroups = {
-        CONQUEROR = {"PALADIN", "PRIEST", "SHAMAN"}, PROTECTOR = {"WARRIOR", "ROGUE", "MONK", "EVOKER"}, 
-        VANQUISHER = {"HUNTER", "MAGE", "DRUID"}, DEATH = {"DEATHKNIGHT", "WARLOCK", "DEMONHUNTER"}
-    }
 
     for group, list in pairs(tierGroups) do
         for _, c in ipairs(list) do data.tierCount[group] = data.tierCount[group] + (data.classCount[c] or 0) end
     end
-    for group, list in pairs(classicTierGroups) do
-        for _, c in ipairs(list) do data.classicTierCount[group] = data.classicTierCount[group] + (data.classCount[c] or 0) end
-    end
+
     return data
 end
 
@@ -1036,9 +1030,8 @@ function rlt:UpdateSynergyDisplay()
     -- [1. 상단 요약 정보]
     local header = string.format("\n"..L["synergyTotalSummaryFormat"], data.total, data.roleCount.TANK, data.roleCount.HEALER, data.roleCount.DAMAGER)
     local t1 = string.format(L["synergyTotalTierFormat"], data.tierCount.DREADFUL, data.tierCount.MYSTIC, data.tierCount.VENERATED, data.tierCount.ZENITH)
-    local t2 = string.format(L["synergyTotalClassicTierFormat"], data.classicTierCount.CONQUEROR, data.classicTierCount.PROTECTOR, data.classicTierCount.VANQUISHER, data.classicTierCount.DEATH)
-    
-    self.SynergyHeader:SetText("|cffffffff" .. header .. "|r\n" .. t1 .. "\n" .. t2)
+
+    self.SynergyHeader:SetText("|cffffffff" .. header .. "|r\n" .. t1)
 
     -- [2. 하단 상세 정보 (아이콘 vs 텍스트)]
     if self.db.global.useIconView then
