@@ -28,6 +28,11 @@ local Default_PROFILE = {
         optGroupSynergy = true,
         optGroupSynergyOverlay = true,
 
+        -- [추가된 부분]
+        optPartyJoinTimestamp = 0,
+        optLfgExpireTimestamp = 0,
+        optLfgExpireWarned = false,
+
         optGroupExpireAlert = true,
         optGroupExpireAlertSound = "CUSTOM_PHONE",
 
@@ -314,8 +319,20 @@ function rlt:OnEnable()
     self:RegisterEvent("PLAYER_REGEN_DISABLED", function() self:UpdateSynergyVisibility() end)
     self:RegisterEvent("PLAYER_REGEN_ENABLED", function() self:UpdateSynergyVisibility() end)
     self:RegisterEvent("LFG_LIST_ENTRY_EXPIRED_TIMEOUT")
+    self:RegisterEvent("UNIT_SPELLCAST_SENT") --UNIT_SPELLCAST_SENT
 
-    if IsInGroup() then self:GROUP_JOINED() end
+    -- [핵심] 리로드 시점에 이미 파티 중이라면 절대로 데이터를 0으로 밀면 안 됩니다.
+    -- IsInGroup()이 리로드 직후 찰나의 순간 false를 뱉을 수 있으므로 
+    -- C_LFGList.HasActiveEntryInfo()까지 더블 체크합니다.
+    if not IsInGroup() and not C_LFGList.HasActiveEntryInfo() then
+        self.db.global.optPartyJoinTimestamp = 0
+        self.db.global.optLfgExpireTimestamp = 0
+    end
+
+    -- 이미 파티 중이면 타이머 실행
+    if IsInGroup() then
+        self:GROUP_JOINED()
+    end
 
     LFGListFrame.CategorySelection.StartGroupButton:HookScript("OnClick", function(self)
 	    --print("(CategorySelection)파티 만들기 버튼 누름")
@@ -325,11 +342,17 @@ function rlt:OnEnable()
             memo:Show()
             memo.EditBox:SetCursorPosition(0)
         end
+
+        -- 만료 타이머 리셋
+        rlt:ResetLFGTimeout()
     end)
 
     LFGListFrame.EntryCreation.ListGroupButton:HookScript("OnClick", function(self)
 	    --print("(EntryCreation)파티 등록 버튼 누름")
         if LFGRecruitmentMemoFrame then LFGRecruitmentMemoFrame:Hide() end
+
+        -- 만료 타이머 리셋
+        rlt:ResetLFGTimeout()
     end)
 
     LFGListFrame.EntryCreation.CancelButton:HookScript("OnClick", function(self)
@@ -354,8 +377,67 @@ function rlt:OnEnable()
 
 end
 
+function rlt:UNIT_SPELLCAST_SENT(event, unit, castID, spellID)
+
+    -- 블러드류 주문 ID 테이블
+    local bloodSpells = {
+        [80353]  = true, -- 시간 왜곡
+        [2825]   = true, -- 피의 욕망
+        [32182]  = true, -- 영웅심
+        [264667] = true, -- 원초적 분노
+        [342242] = true, -- 시간 왜곡 (직업 특성 등)
+        [390386] = true, -- 위상의 격노
+        [444257] = true, -- 우레의 북
+        [466904] = true,  -- 유린자의 울음소리
+    }
+
+    -- 플레이어가 위 주문 중 하나를 시전했을 때만 실행
+    if unit == "player" and bloodSpells[spellID] then
+        self:Print("[Debug]|cFF00FF00블러드 확인 전!|r")
+        local success, err = pcall(function()
+            -- 1. 채팅 메시지 설정
+            local playerName = UnitName("player")
+            local spellName = C_Spell.GetSpellInfo(spellID) or "블러드"
+            local message = string.format("[%s] - 블러드 시전! / RaidLeaderTool", playerName)
+            
+            -- 2. 채널 판단 (레이드면 RAID, 파티면 PARTY, 혼자면 SAY)
+            local chatType = "SAY"
+            if IsInRaid() then
+                chatType = "RAID"
+            elseif IsInGroup() then
+                chatType = "PARTY"
+            end
+            
+            -- 3. 메시지 전송
+            C_ChatInfo.SendChatMessage(message, chatType)
+
+            -- 디버그용 출력 (선택 사항)
+            self:Print("[Debug]"..message)
+            self:Print("[Debug]|cFF00FF00블러드 알림 전송 완료!|r")
+        end)
+
+        if not success then
+            self:Printf("|cFFFF0000실행 에러:|r %s", err)
+        end
+    end
+    -- if unit == "player" and spellID == 213771 then
+        
+    --     -- pcall을 사용하여 시전 알림 로직 실행
+    --     local success, err = pcall(function()
+    --         self:Print("|cFF00FF00시전 성공!|r 사운드를 재생합니다.")
+            
+    --         PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON, "Master")
+    --     end)
+
+    --     -- 만약 pcall 내부에서 문제가 생겼을 경우 처리
+    --     if not success then
+    --         self:Printf("|cFFFF0000실행 에러:|r %s", err)
+    --     end
+    -- end
+end
+
 ---
---- 이벤트 핸들러
+--- MARK: 이벤트 핸들러
 ---
 
 rlt.lastLfgAlertTime = 0
@@ -363,12 +445,14 @@ rlt.lastApplicantCount = 0
 
 function rlt:LFG_LIST_APPLICANT_UPDATED()
 
-    -- 1. 기본 권한 및 옵션 체크
+    -- [타이머 리셋 코드 삽입]
+    self:ResetLFGTimeout()
+
+    -- --- 여기서부터 기존 코드 그대로 유지 ---
     if not self.db.global.optGlobalEnable or not self.db.global.optLfgAlert then 
         return 
     end
 
-    -- 모집 중이 아니면 숫자를 0으로 고정하고 종료
     if not C_LFGList.HasActiveEntryInfo() then
         self.lastApplicantCount = 0
         return 
@@ -380,58 +464,52 @@ function rlt:LFG_LIST_APPLICANT_UPDATED()
         return 
     end
 
-    -- 2. 현재 모든 신청자 ID 리스트 가져오기
     local applicants = C_LFGList.GetApplicants()
     local activeCount = 0
     local currentTime = GetTime()
 
-    -- 3. [핵심] 잔상을 제거하고 실제 '대기 중'인 인원만 카운트
     for _, applicantID in ipairs(applicants) do
         local info = C_LFGList.GetApplicantInfo(applicantID)
-        -- 상태가 "applied"인 경우(실제 대기 중)만 유효 숫자로 인정
-        -- 취소(cancelled)나 거절된 잔상은 카운트에서 제외됨
         if info and (info.pendingApplicationStatus == "applied" or info.isNew) then
             activeCount = activeCount + 1
         end
     end
 
-    -- 4. 실제 유효 신청자가 이전보다 늘어났을 때만 알림 실행
     if activeCount > (self.lastApplicantCount or 0) then
-        
-        -- 3초 쿨타임 체크 (연속 알람 방지)
         if (currentTime - (self.lastLfgAlertTime or 0)) < 3 then
-            self.lastApplicantCount = activeCount -- 숫자 동기화는 수행
+            self.lastApplicantCount = activeCount
             return 
         end
 
         self.lastLfgAlertTime = currentTime
-
-        -- [알림 액션]
         self:ShowText(L["newLfgAlertText"], 5)
         self:PlayAlert(self.db.global.optLfgAlertSound)
 
-        -- 파티 찾기 창이 닫혀있다면 자동으로 열기
         if not GroupFinderFrame:IsVisible() then 
             PVEFrame_ShowFrame("GroupFinderFrame")
-            -- '내 파티 등록' 탭(보통 3번 버튼) 클릭
             if GroupFinderFrameGroupButton3 then 
                 GroupFinderFrameGroupButton3:Click() 
             end
         end
-
-        -- 작업표시줄 아이콘 깜빡임
         FlashClientIcon()
     end
-
-    -- 5. 현재 실제 유효 인원수로 상태 동기화 (거절/취소 발생 시에도 정확한 숫자로 업데이트)
     self.lastApplicantCount = activeCount
 end
 
 function rlt:LFG_LIST_ACTIVE_ENTRY_UPDATE()
-    -- 모집글이 사라졌다면 다음을 위해 카운트 초기화
-    if not C_LFGList.HasActiveEntryInfo() then
+
+    if C_LFGList.HasActiveEntryInfo() then
+        -- [추가 체크] 만료 시간이 현재 시간보다 과거라면(이미 지나갔다면) 리셋
+        -- 그렇지 않고 미래의 시간(time() 보다 큰 값)이 들어있다면 리로드 중에도 흐른 것으로 간주하고 유지함
+        local savedExpire = self.db.global.optLfgExpireTimestamp or 0
+        if savedExpire <= time() then 
+            self:ResetLFGTimeout()
+        end
+    else
+        self.db.global.optLfgExpireTimestamp = 0
         self.lastApplicantCount = 0
     end
+    self:UpdateTimerDisplay()
 end
 
 rlt.SynergyMain = nil
@@ -439,6 +517,7 @@ rlt.SynergyFrame = nil
 rlt.SynergyFrameText = nil
 
 function rlt:GROUP_JOINED()
+    -- 기존 권한 체크 유지
     if not self.db.global.optGlobalEnable then return end
     if not self.db.global.optGroupSynergy then return end
 
@@ -446,12 +525,38 @@ function rlt:GROUP_JOINED()
         self:CreateSynergyUI() 
     end
 
-    self:UpdateLFGButtons()
+    -- 리로드 대응: 이미 값이 있으면(0이 아니면) 새로 기록하지 않음
+    if not self.db.global.optPartyJoinTimestamp or self.db.global.optPartyJoinTimestamp == 0 then
+        self.db.global.optPartyJoinTimestamp = time()
+    end
 
+    -- [중요] 리로드 시 만료 시간을 30분으로 초기화하지 않음!
+    -- 모집 중이고 DB에 저장된 만료 시간이 없을 때만 최초 30분 설정
+    if UnitIsGroupLeader("player") and C_LFGList.HasActiveEntryInfo() then
+        if not self.db.global.optLfgExpireTimestamp or self.db.global.optLfgExpireTimestamp == 0 then
+            self:ResetLFGTimeout()
+        end
+    end
+
+    if not self.timerTicker then
+        self.timerTicker = C_Timer.NewTicker(1, function() self:UpdateTimerDisplay() end)
+    end
+
+    self:UpdateLFGButtons()
     self:UpdateSynergyVisibility()
 end
 
 function rlt:GROUP_LEFT()
+    if self.timerTicker then
+        self.timerTicker:Cancel()
+        self.timerTicker = nil
+    end
+    
+    -- 다음 파티를 위해 모든 타임스탬프 0으로 리셋
+    self.db.global.optPartyJoinTimestamp = 0
+    self.db.global.optLfgExpireTimestamp = 0
+
+    -- 기존 로직 유지s
     if self.SynergyFrame then self.SynergyFrame:Hide() end
 end
 
@@ -463,24 +568,97 @@ end
 
 function rlt:LFG_LIST_ENTRY_EXPIRED_TIMEOUT()
 
-    if not self.db.global.optGlobalEnable then 
-        return 
-    end
+    if not self.db.global.optGlobalEnable then return end
+    
+    self.db.global.optLfgExpireTimestamp = 0 -- 초기화
 
     self:ShowText(L["newLfgExpiredTimeoutText"], 5)
-
     if self.db.global.optGroupExpireAlert then
         self:PlayAlert(self.db.global.optGroupExpireAlertSound)
     end
-
     PVEFrame_ShowFrame("GroupFinderFrame")
     LFGListFrame.CategorySelection.StartGroupButton:Click()
-
     FlashClientIcon()
 end
 
 ---
---- 파티 시너지
+---
+---
+
+-- 전역 변수 혹은 rlt 테이블 내부에 타이머 변수 선언
+rlt.startTime = 0
+rlt.timerTicker = nil
+
+-- [상수 설정]
+local LFG_TIMEOUT_SECONDS = 1800 -- 30분
+
+-- [도움 함수] LFG 만료 타이머 리셋 (30분 연장)
+function rlt:ResetLFGTimeout()
+    if UnitIsGroupLeader("player") and C_LFGList.HasActiveEntryInfo() then
+        -- 현재 서버 시간 + 1800초를 DB에 저장 (미래의 고정된 시점)
+        self.db.global.optLfgExpireTimestamp = time() + 1800
+        -- [중요] 시간을 새로 충전했으므로, 다음 3분 전 알림을 위해 경고 플래그 리셋
+        self.db.global.optLfgExpireWarned = false 
+    end
+end
+
+-- [타이머 화면 업데이트] 1초마다 Ticker에 의해 호출됨
+function rlt:UpdateTimerDisplay()
+    if not self.SynergyFrame or not self.SynergyFrame.timerText then return end
+    
+    local currentTime = time()
+
+    -- 1) 경과 타이머 (정방향)
+    local joinTime = self.db.global.optPartyJoinTimestamp
+    if joinTime and joinTime > 0 then
+        local diff = currentTime - joinTime
+        local m, s = math.floor(diff / 60), math.floor(diff % 60)
+        local tag = UnitIsGroupLeader("player") and "|cffffd100[생성]|r " or "|cff00ff00[합류]|r "
+        self.SynergyFrame.timerText:SetFormattedText("%s%02d:%02d", tag, m, s)
+    end
+
+    -- 2) 만료 타이머 (역방향 카운트다운)
+    local expireTime = self.db.global.optLfgExpireTimestamp
+    if UnitIsGroupLeader("player") and expireTime and expireTime > 0 then
+        local remaining = expireTime - currentTime 
+        
+        -- [테스트 모드: 1770 / 실배포: 180] 
+        -- 리로드 시 DB의 optLfgExpireWarned 값이 true라면 팝업을 건너뜁니다.
+        if remaining <= 180 and remaining > 0 and not self.db.global.optLfgExpireWarned then
+            self.db.global.optLfgExpireWarned = true -- DB에 저장하여 리로드 후 중복 방지
+            
+            StaticPopup_Show("RLT_EXPIRATION_WARNING")
+            PlaySound(SOUNDKIT.RAID_WARNING, "master")
+        end
+
+        -- 텍스트 렌더링
+        if remaining > 0 then
+            local rm, rs = math.floor(remaining / 60), math.floor(remaining % 60)
+            -- 1분 미만이면 빨간색, 아니면 회색계열
+            local color = (remaining < 60) and "|cffff0000" or "|cffaaaaaa"
+            self.SynergyFrame.expireText:SetFormattedText("%s(만료 %02d:%02d)|r", color, rm, rs)
+            self.SynergyFrame.expireText:Show()
+        else
+            self.SynergyFrame.expireText:SetText("|cffff0000(만료됨)|r")
+        end
+    else
+        -- 파티장이 아니거나 모집 중이 아니면 숨김
+        if self.SynergyFrame.expireText then
+            self.SynergyFrame.expireText:Hide()
+        end
+    end
+end
+
+StaticPopupDialogs["RLT_EXPIRATION_WARNING"] = {
+    text = "|cffffd100[RaidLeaderTool]|r\n\n|cffff4444파티 모집 만료 3분 전입니다!|r\n\n아래 단계를 실행하면 대기 시간이 |cff00ff00갱신|r됩니다.\n|cffffff00[편집]|r 클릭 -> |cffffff00[작성 완료]|r 클릭\n\n|cff888888(내용을 수정하지 않아도 버튼만 누르면 갱신됩니다)|r",
+    button1 = "확인",
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+---
+--- MARK: 파티 시너지
 ---
 
 -- 1. 데이터 계산 로직 (기본 로직 유지)
@@ -656,6 +834,21 @@ function rlt:CreateSynergyUI()
         end
     end)
 
+    -- [1. 경과 시간 타이머] (위쪽)
+    local timerText = TitlebarContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    timerText:SetFont([[Fonts\2002.TTF]], 11, "OUTLINE")
+    timerText:SetPoint("BOTTOM", TitlebarContainer, "CENTER", 0, 1) -- 약간 위
+    timerText:SetText("00:00")
+    self.SynergyFrame.timerText = timerText
+
+    -- [2. 만료 카운트다운] (아래쪽)
+    local expireText = TitlebarContainer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    expireText:SetFont([[Fonts\2002.TTF]], 10, "OUTLINE")
+    expireText:SetPoint("TOP", TitlebarContainer, "CENTER", 0, -1) -- 약간 아래
+    expireText:SetTextColor(1, 0.8, 0)
+    expireText:SetText("(만료 30:00)")
+    self.SynergyFrame.expireText = expireText
+
     -- [2. HeaderContainer] (텍스트 양에 따라 가변 높이)
     local HeaderContainer = CreateFrame("Frame", nil, display)
     HeaderContainer:SetWidth(contentWidth)
@@ -700,7 +893,7 @@ function rlt:CreateSynergyUI()
             self.bg:SetColorTexture(0.4, 0.4, 0.4, 0.9)
             -- 툴팁 추가 (선택 사항)
             GameTooltip:SetOwner(self, "ANCHOR_TOP")
-            GameTooltip:SetText(L["Click to toggle status"]) 
+            GameTooltip:SetText("Click to toggle status") 
             GameTooltip:Show()
         end)
         btn:SetScript("OnLeave", function(self)
@@ -742,14 +935,12 @@ function rlt:CreateSynergyUI()
     UpdateBtnText()
 
     viewBtn:SetScript("OnClick", function()
-        PlaySound(856) -- [WoW UI Sounds](https://warcraft.wiki.gg)
         self.db.global.useIconView = not self.db.global.useIconView
         UpdateBtnText()
         self:UpdateSynergyDisplay()
     end)
 
     shortBtn:SetScript("OnClick", function()
-        PlaySound(856)
         self.db.global.useShortText = not self.db.global.useShortText
         UpdateBtnText()
         self:UpdateSynergyDisplay()
@@ -764,7 +955,7 @@ function rlt:CreateSynergyUI()
     -- 텍스트 뷰
     local classText = DataContainer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     classText:SetFont([[Fonts\2002.TTF]], 18, "THICKOUTLINE")
-    classText:SetSpacing(12)
+    classText:SetSpacing(5)
     classText:SetWidth(contentWidth - 10)
     classText:SetPoint("TOPLEFT", DataContainer, "TOPLEFT", 10, 0)
     classText:SetJustifyH("LEFT")
@@ -935,7 +1126,7 @@ function rlt:UpdateSynergyVisibility()
 end
 
 ---
---- 파티 모집글
+--- MARK: 파티 모집글
 ---
 rlt.LFGRecruitmentMemoFrame = nil -- 프레임 객체 저장 변수
 
@@ -1032,7 +1223,7 @@ function rlt:GetOrCreateMemoFrame()
 end
 
 ---
---- 파티 탐색하기 버튼
+--- MARK: 파티 탐색하기 버튼
 ---
 rlt.lfgButtons = {}
 

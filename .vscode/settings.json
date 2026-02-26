@@ -12,7 +12,7 @@
         "utf8": "disable"
     },
     "Lua.workspace.library": [
-        "~\\.vscode\\extensions\\ketho.wow-api-0.22.2\\Annotations\\Core"
+        "~\\.vscode\\extensions\\ketho.wow-api-0.22.3\\Annotations\\Core"
     ],
     "Lua.type.weakUnionCheck": true,
     "Lua.diagnostics.globals": [
@@ -49,6 +49,18 @@
         "CalendarFrame",
         "CalendarCloseButton",
         "UIParentLoadAddOn",
-        "CalendarFrame_OpenEvent"
+        "CalendarFrame_OpenEvent",
+        "SOUNDKIT",
+        "SlashCmdList",
+        "ReloadUI",
+        "StaticPopupDialogs",
+        "StaticPopup_Show",
+        "CR_CRIT_MELEE",
+        "CR_HASTE_MELEE",
+        "CR_MASTERY",
+        "CR_VERSATILITY_DAMAGE_DONE",
+        "CR_LIFESTEAL",
+        "CR_AVOIDANCE",
+        "CR_VERSATILITY_DAMAGE_TAKEN"
     ]
 }
