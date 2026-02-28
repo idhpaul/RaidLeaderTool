@@ -349,7 +349,7 @@ function rlt:OnEnable()
 	    --print("(EntryCreation)파티 등록 버튼 누름")
         if rlt.LFGRecruitmentMemoFrame.frame then 
             rlt.LFGRecruitmentMemoFrame.frame:Hide()
-            rlt.LFGRecruitmentMemoFrame.eb:ClearFocus() -- 포커스 해제 추가
+            rlt.LFGRecruitmentMemoFrame.editBox:ClearFocus() -- 포커스 해제 추가
         end
 
         -- 만료 타이머 리셋
@@ -360,7 +360,7 @@ function rlt:OnEnable()
 	    --print("(EntryCreation)뒤로가기 버튼 누름")
         if rlt.LFGRecruitmentMemoFrame.frame then 
             rlt.LFGRecruitmentMemoFrame.frame:Hide()
-            rlt.LFGRecruitmentMemoFrame.eb:ClearFocus() -- 포커스 해제 추가
+            rlt.LFGRecruitmentMemoFrame.editBox:ClearFocus() -- 포커스 해제 추가
         end
     end)
 
@@ -374,7 +374,7 @@ function rlt:OnEnable()
         --print("PVEFrame이 닫혔습니다.")
         if rlt.LFGRecruitmentMemoFrame.frame then 
             rlt.LFGRecruitmentMemoFrame.frame:Hide()
-            rlt.LFGRecruitmentMemoFrame.eb:ClearFocus() -- 포커스 해제 추가
+            rlt.LFGRecruitmentMemoFrame.editBox:ClearFocus() -- 포커스 해제 추가
         end
     end)
 
@@ -632,6 +632,8 @@ function rlt:UpdateTimerDisplay()
             
             StaticPopup_Show("RLT_EXPIRATION_WARNING")
             PlaySound(SOUNDKIT.RAID_WARNING, "master")
+
+            FlashClientIcon()
         end
 
         -- 텍스트 렌더링
@@ -664,7 +666,183 @@ StaticPopupDialogs["RLT_EXPIRATION_WARNING"] = {
 --- MARK: 파티 시너지
 ---
 
--- 1. 데이터 계산 로직 (기본 로직 유지)
+function rlt:CreateSynergySettingUI()
+    if self.SynergySettingFrame then
+        self.SynergySettingFrame:SetShown(not self.SynergySettingFrame:IsShown())
+        return
+    end
+
+    local w = 240
+    local h = 480
+    local margin = 20 -- 모든 요소의 좌측 정렬 및 구분선 여백 기준
+
+    -- [1. 메인 설정 프레임]
+    local f = CreateFrame("Frame", "RLT_SynergySettingFrame", self.SynergyFrame, "BackdropTemplate")
+    f:SetSize(w, h)
+    f:SetPoint("TOPLEFT", self.SynergyFrame, "TOPRIGHT", 5, 0)
+    f:SetBackdrop({ 
+        bgFile = "Interface\\ChatFrame\\ChatFrameBackground", 
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", 
+        tile = true, tileSize = 16, edgeSize = 16, 
+        insets = { left = 4, right = 4, top = 4, bottom = 4 } 
+    })
+    f:SetBackdropColor(0, 0, 0, 0.95)
+    f:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+
+    -- [2. 타이틀바]
+    local TitlebarContainer = CreateFrame("Frame", nil, f, "BackdropTemplate")
+    TitlebarContainer:SetSize(w - 8, 28)
+    TitlebarContainer:SetPoint("TOPLEFT", f, "TOPLEFT", 4, -4)
+    TitlebarContainer:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 1,
+    })
+    TitlebarContainer:SetBackdropColor(0.15, 0.15, 0.15, 1)
+    TitlebarContainer:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.8)
+
+    local closeBtn = CreateFrame("Button", nil, TitlebarContainer, "UIPanelCloseButton")
+    closeBtn:SetSize(22, 22)
+    closeBtn:SetPoint("RIGHT", TitlebarContainer, "RIGHT", -2, 0)
+    closeBtn:SetScript("OnClick", function() f:Hide() end)
+
+    local titleText = TitlebarContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    titleText:SetPoint("LEFT", TitlebarContainer, "LEFT", 10, 0)
+    titleText:SetText("구인 모니터 설정")
+
+    -- --- UI 공통 헬퍼 함수 ---
+    
+    -- 구분선: 밀림 방지를 위해 TOPLEFT 기준으로 슬라이더와 동일한 너비(w - 40) 설정
+    local function CreateSeparator(parent, topAnchor, offset)
+        local line = parent:CreateTexture(nil, "ARTWORK")
+        line:SetSize(w - (margin * 2), 1)
+        line:SetPoint("TOP", topAnchor, "BOTTOM", 0, -offset)
+        line:SetColorTexture(1, 1, 1, 0.15)
+        return line
+    end
+
+    local function CreateStrongCheckBox(parent, text, currentV, onClick)
+        local cb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+        cb:SetSize(24, 24)
+        
+        -- 체크박스 시인성 강화를 위한 테두리
+        local border = CreateFrame("Frame", nil, cb, "BackdropTemplate")
+        border:SetSize(18, 18)
+        border:SetPoint("CENTER", cb, "CENTER", 0, 0)
+        border:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
+        border:SetBackdropBorderColor(1, 1, 1, 0.4)
+        
+        local label = cb.Text or (cb:GetName() and _G)
+        if label then
+            label:SetText(text)
+            label:SetFontObject("GameFontNormalSmall")
+            label:SetTextColor(1, 0.82, 0)
+        end
+        
+        cb:SetChecked(currentV)
+        cb:SetScript("OnClick", function(self) if onClick then onClick(self:GetChecked()) end end)
+        return cb
+    end
+
+    local function CreateMinimalValueSlider(parent, label, minV, maxV, currentV, onValueChange)
+        local s = CreateFrame("Slider", nil, parent, "MinimalSliderTemplate")
+        s:SetSize(w - (margin * 2), 20) 
+        s:SetMinMaxValues(minV, maxV)
+        s:SetValueStep(1)
+        s:SetObeyStepOnDrag(true)
+        s:SetValue(currentV or minV)
+
+        local title = s:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        title:SetPoint("BOTTOMLEFT", s, "TOPLEFT", 0, 5)
+        title:SetText(label .. ": |cffffffff" .. s:GetValue() .. "|r")
+
+        local lowText = s:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        lowText:SetPoint("TOPLEFT", s, "BOTTOMLEFT", 0, -2)
+        lowText:SetText(minV)
+
+        local highText = s:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        highText:SetPoint("TOPRIGHT", s, "BOTTOMRIGHT", 0, -2)
+        highText:SetText(maxV)
+
+        s:SetScript("OnValueChanged", function(self, value)
+            local rounded = math.floor(value + 0.5)
+            title:SetText(label .. ": |cffffffff" .. rounded .. "|r")
+            if onValueChange then onValueChange(rounded) end
+        end)
+        return s
+    end
+
+    -- [Option1Container]
+    local Option1Container = CreateFrame("Frame", nil, f)
+    Option1Container:SetSize(w - (margin * 2), 130)
+    Option1Container:SetPoint("TOP", TitlebarContainer, "BOTTOM", 0, -5)
+
+    local sliderSize = CreateMinimalValueSlider(Option1Container, "글자 크기", 5, 30, self.db.global.fontSize, function(v)
+        self.db.global.fontSize = v
+    end)
+    sliderSize:SetPoint("TOPLEFT", 0, -25)
+    
+    local sliderSpacing = CreateMinimalValueSlider(Option1Container, "줄 간격", -10, 10, self.db.global.fontSpacing, function(v)
+        self.db.global.fontSpacing = v
+    end)
+    sliderSpacing:SetPoint("TOPLEFT", 0, -80)
+
+    -- 첫 번째 구분선 (슬라이더 바로 아래 정렬)
+    local Separator1 = CreateSeparator(f, Option1Container, 5)
+
+    -- [Option2Container]
+    local Option2Container = CreateFrame("Frame", nil, f)
+    Option2Container:SetSize(w - (margin * 2), 80)
+    Option2Container:SetPoint("TOP", Separator1, "BOTTOM", 0, -5)
+
+    local checkShort = CreateStrongCheckBox(Option2Container, "축약 모드 사용", self.db.global.useShortMode, function(v)
+        self.db.global.useShortMode = v
+    end)
+    checkShort:SetPoint("TOPLEFT", 0, 0)
+    
+    local checkTimer = CreateStrongCheckBox(Option2Container, "타이머 표시", self.db.global.showTimer, function(v)
+        self.db.global.showTimer = v
+    end)
+    checkTimer:SetPoint("TOPLEFT", 0, -30)
+
+    -- 두 번째 구분선 (체크박스 바로 아래 정렬)
+    local Separator2 = CreateSeparator(f, Option2Container, 5)
+
+    -- [Option3Container]
+    local Option3Container = CreateFrame("Frame", nil, f)
+    Option3Container:SetSize(w - (margin * 2), 140)
+    Option3Container:SetPoint("TOP", Separator2, "BOTTOM", 0, -5)
+
+    local checkMacro = CreateStrongCheckBox(Option3Container, "매크로 활성화", self.db.global.useMacro, function(v)
+        self.db.global.useMacro = v
+    end)
+    checkMacro:SetPoint("TOPLEFT", 0, 0)
+
+    local macroEditBoxBG = CreateFrame("Frame", nil, Option3Container, "BackdropTemplate")
+    macroEditBoxBG:SetSize(w - (margin * 2), 80)
+    macroEditBoxBG:SetPoint("TOPLEFT", 0, -35)
+    macroEditBoxBG:SetBackdrop({
+        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+    })
+    macroEditBoxBG:SetBackdropColor(0, 0, 0, 1)
+    macroEditBoxBG:SetBackdropBorderColor(0.6, 0.6, 0.6, 1)
+
+    local macroEditBox = CreateFrame("EditBox", nil, macroEditBoxBG)
+    macroEditBox:SetMultiLine(true)
+    macroEditBox:SetMaxLetters(255)
+    macroEditBox:SetFontObject("ChatFontNormal")
+    macroEditBox:SetSize(macroEditBoxBG:GetWidth() - 16, macroEditBoxBG:GetHeight() - 16)
+    macroEditBox:SetPoint("TOPLEFT", 8, -8)
+    macroEditBox:SetAutoFocus(false)
+    macroEditBox:SetText(self.db.global.macroText or "")
+    macroEditBox:SetScript("OnTextChanged", function(s) self.db.global.macroText = s:GetText() end)
+    macroEditBox:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
+
+    self.SynergySettingFrame = f
+end
+
 function rlt:GetSynergyData()
     local data = {
         total = 0,
@@ -764,7 +942,7 @@ function rlt:CreateSynergyUI()
 
     -- [1. 알파 슬라이더: MinimalSliderTemplate + 하단 레이블]
     local alphaSlider = CreateFrame("Slider", "RLT_SynergyAlphaSlider", TitlebarContainer, "MinimalSliderTemplate")
-    alphaSlider:SetPoint("LEFT", TitlebarContainer, "LEFT", 10, 4) -- 레이블 공간을 위해 약간 위로
+    alphaSlider:SetPoint("LEFT", TitlebarContainer, "LEFT", 4, 4) -- 레이블 공간을 위해 약간 위로
     alphaSlider:SetSize(80, 18)
     alphaSlider:SetMinMaxValues(0, 1.0)
     alphaSlider:SetValueStep(0.05)
@@ -831,20 +1009,38 @@ function rlt:CreateSynergyUI()
         end
     end)
 
-    -- -- [1. 경과 시간 타이머] (위쪽)
-    -- local timerText1 = TitlebarContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    -- timerText1:SetFont([[Fonts\2002.TTF]], 11, "OUTLINE")
-    -- timerText1:SetPoint("BOTTOM", TitlebarContainer, "CENTER", 0, 1) -- 약간 위
-    -- timerText1:SetText("00:00")
-    -- self.SynergyFrame.timerText = timerText1
+    -- [2. 셋팅 버튼: 톱니 아이콘 형태]
+    local settingBtn = CreateFrame("Button", nil, TitlebarContainer)
+    settingBtn:SetSize(45,45) 
+    settingBtn:SetPoint("RIGHT", pinBtn, "LEFT", 10, 0)
 
-    -- -- [2. 만료 카운트다운] (아래쪽)
-    -- local expireText1 = TitlebarContainer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    -- expireText1:SetFont([[Fonts\2002.TTF]], 10, "OUTLINE")
-    -- expireText1:SetPoint("TOP", TitlebarContainer, "CENTER", 0, -1) -- 약간 아래
-    -- expireText1:SetTextColor(1, 0.8, 0)
-    -- expireText1:SetText("(만료 30:00)")
-    -- self.SynergyFrame.expireText = expireText1
+    local settingTex = settingBtn:CreateTexture(nil, "ARTWORK")
+    settingTex:SetSize(35, 35) 
+    settingTex:SetPoint("CENTER", settingBtn, "CENTER", 0, 0)
+    settingTex:SetTexture([[Interface\AddOns\RaidLeaderTool\Assets\Icons\settingGray]])
+    settingTex:SetVertexColor(1, 1, 1, 0.8)
+    settingBtn.tex = settingTex 
+    -- 하이라이트 효과 (마우스 올리면 밝아짐)
+    settingBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+
+    settingBtn:SetScript("OnClick", function()
+
+        self:UpdateSynergyVisibility()
+        
+        rlt:CreateSynergySettingUI()
+    end)
+
+    -- 타이틀바 텍스트
+    local titleText1 = TitlebarContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    titleText1:SetFont([[Fonts\2002.TTF]], 12, "OUTLINE")
+    titleText1:SetPoint("BOTTOM", TitlebarContainer, "CENTER", 0, 1) -- 약간 위
+    titleText1:SetText("구인 모니터")
+
+    local titleText2 = TitlebarContainer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    titleText2:SetFont([[Fonts\2002.TTF]], 9, "OUTLINE")
+    titleText2:SetPoint("TOP", TitlebarContainer, "CENTER", 0, -1) -- 약간 아래
+    titleText2:SetTextColor(1, 0.8, 0)
+    titleText2:SetText("(RaidLeaderTool)")
 
     -- [2. HeaderContainer] (텍스트 양에 따라 가변 높이)
     local HeaderContainer = CreateFrame("Frame", nil, display)
