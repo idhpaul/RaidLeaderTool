@@ -32,7 +32,7 @@ L["optGroupListDiscription"] = "    - Adds a 'Browse Groups' button while in a p
 -- 
 L["newLfgAlertText"] = "New Applicant!"
 L["newLfgExpiredTimeoutText"] = "Group is Expired Timeout!"
-L["synergyTotalSummaryFormat"] = "|cffffff00Total: %d|r \n   |cFF80D9FFTank: %d|r / |cFF2ECC71Heal: %d|r / |cFFE67E22Dps: %d|r"
+L["synergyTotalSummaryFormat"] = "|cffffff00Total: %d|r \n   - |cFF80D9FFTank: %d|r \n   - |cFF2ECC71Heal: %d|r \n   - |cFFE67E22Dps: %d|r"
 L["synergyTotalTierFormat"] = "\n|cffffd100[Tier]|r \n   - Dreadful(Cloth) : %d\n   - Mystic(Leather) : %d\n   - Venerated(Mail) : %d\n   - Zenith(Plate) : %d"
 L["synergyTotalClassicTierFormat"] = "\n|cffffd100[Tier (before Midnight)]|r \n   - Conqueror : %d\n   - Protector : %d\n   - Vanquisher : %d\n   - Death : %d"
 L["synergyOverlayTooltipTitle"] = "Overlay"

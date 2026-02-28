@@ -626,12 +626,13 @@ function rlt:UpdateTimerDisplay()
         local remaining = expireTime - currentTime 
         
         -- [테스트 모드: 1770 / 실배포: 180] 
-        -- 리로드 시 DB의 optLfgExpireWarned 값이 true라면 팝업을 건너뜁니다.
         if remaining <= 180 and remaining > 0 and not self.db.global.optLfgExpireWarned then
-            self.db.global.optLfgExpireWarned = true -- DB에 저장하여 리로드 후 중복 방지
+            self.db.global.optLfgExpireWarned = true
             
             StaticPopup_Show("RLT_EXPIRATION_WARNING")
-            PlaySound(SOUNDKIT.RAID_WARNING, "master")
+            if self.db.global.optGroupExpireAlert then
+                self:PlayAlert(self.db.global.optGroupExpireAlertSound)
+            end
 
             FlashClientIcon()
         end
@@ -1010,25 +1011,25 @@ function rlt:CreateSynergyUI()
     end)
 
     -- [2. 셋팅 버튼: 톱니 아이콘 형태]
-    local settingBtn = CreateFrame("Button", nil, TitlebarContainer)
-    settingBtn:SetSize(45,45) 
-    settingBtn:SetPoint("RIGHT", pinBtn, "LEFT", 10, 0)
+    -- local settingBtn = CreateFrame("Button", nil, TitlebarContainer)
+    -- settingBtn:SetSize(45,45) 
+    -- settingBtn:SetPoint("RIGHT", pinBtn, "LEFT", 10, 0)
 
-    local settingTex = settingBtn:CreateTexture(nil, "ARTWORK")
-    settingTex:SetSize(35, 35) 
-    settingTex:SetPoint("CENTER", settingBtn, "CENTER", 0, 0)
-    settingTex:SetTexture([[Interface\AddOns\RaidLeaderTool\Assets\Icons\settingGray]])
-    settingTex:SetVertexColor(1, 1, 1, 0.8)
-    settingBtn.tex = settingTex 
-    -- 하이라이트 효과 (마우스 올리면 밝아짐)
-    settingBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+    -- local settingTex = settingBtn:CreateTexture(nil, "ARTWORK")
+    -- settingTex:SetSize(35, 35) 
+    -- settingTex:SetPoint("CENTER", settingBtn, "CENTER", 0, 0)
+    -- settingTex:SetTexture([[Interface\AddOns\RaidLeaderTool\Assets\Icons\settingGray]])
+    -- settingTex:SetVertexColor(1, 1, 1, 0.8)
+    -- settingBtn.tex = settingTex 
+    -- -- 하이라이트 효과 (마우스 올리면 밝아짐)
+    -- settingBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
 
-    settingBtn:SetScript("OnClick", function()
+    -- settingBtn:SetScript("OnClick", function()
 
-        self:UpdateSynergyVisibility()
+    --     self:UpdateSynergyVisibility()
         
-        rlt:CreateSynergySettingUI()
-    end)
+    --     rlt:CreateSynergySettingUI()
+    -- end)
 
     -- 타이틀바 텍스트
     local titleText1 = TitlebarContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
