@@ -12,7 +12,7 @@ local LDBIcon			= LibStub("LibDBIcon-1.0")
 
 local ADDON_NAME = "RaidLeaderTool"
 local ADDON_DB_NAME = "RaidLeaderToolDB"
-local CURRENT_VERSION		= "1.0.9"
+local CURRENT_VERSION		= "1.0.10"
 
 local Default_PROFILE = {
     global = {
@@ -654,6 +654,7 @@ end
 
 StaticPopupDialogs["RLT_EXPIRATION_WARNING"] = {
     text = L["dialog_expirationWarningText"],
+    button1 = L["confirm"],
     timeout = 0,
     whileDead = true,
     hideOnEscape = true,
@@ -889,7 +890,7 @@ function rlt:CreateSynergyUI()
             self.bg:SetColorTexture(0.4, 0.4, 0.4, 0.9)
             -- 툴팁 추가 (선택 사항)
             GameTooltip:SetOwner(self, "ANCHOR_TOP")
-            GameTooltip:SetText("Click to toggle status") 
+            GameTooltip:SetText(L["synergyButtonToggleTooltip"]) 
             GameTooltip:Show()
         end)
         btn:SetScript("OnLeave", function(self)
@@ -1152,10 +1153,30 @@ function rlt:UpdateAndShowMemo()
         rlt:CreateMemoFrame()
     end
 
-    rlt.LFGRecruitmentMemoFrame.eb:SetText(rlt.db.global.optRecruitmentMemoText or "")
+    if (not rlt.db.global.optRecruitmentMemoText or rlt.db.global.optRecruitmentMemoText == "") then
+        rlt.LFGRecruitmentMemoFrame.placeholder:Show()
+    else
+        rlt.LFGRecruitmentMemoFrame.placeholder:Hide()
+        rlt.LFGRecruitmentMemoFrame.editBox:SetText(rlt.db.global.optRecruitmentMemoText)
+    end
+
+    -- 힌트 표시 여부를 결정하는 함수
+    local function UpdatePlaceholder()
+        local text = rlt.LFGRecruitmentMemoFrame.editBox:GetText()
+        if (not text or text == "") and not rlt.LFGRecruitmentMemoFrame.editBox:HasFocus() then
+            rlt.LFGRecruitmentMemoFrame.placeholder:Show()
+        else
+            rlt.LFGRecruitmentMemoFrame.placeholder:Hide()
+        end
+    end
+
+    -- 포커스 및 텍스트 변경 이벤트 연결
+    rlt.LFGRecruitmentMemoFrame.editBox:SetCallback("OnTextChanged", UpdatePlaceholder)
+    rlt.LFGRecruitmentMemoFrame.editBox.editBox:HookScript("OnEditFocusGained", UpdatePlaceholder)
+    rlt.LFGRecruitmentMemoFrame.editBox.editBox:HookScript("OnEditFocusLost", UpdatePlaceholder)
     
     rlt.LFGRecruitmentMemoFrame.frame:Show()
-    rlt.LFGRecruitmentMemoFrame.eb.frame:Show()
+    rlt.LFGRecruitmentMemoFrame.editBox.frame:Show()
 end
 
 -- 메모장 프레임을 생성
@@ -1222,21 +1243,6 @@ function rlt:CreateMemoFrame()
     placeholder:SetJustifyH("LEFT")
     placeholder:SetJustifyV("TOP")
 
-    -- 힌트 표시 여부를 결정하는 함수
-    local function UpdatePlaceholder()
-        local text = eb:GetText()
-        if (not text or text == "") and not eb.editBox:HasFocus() then
-            placeholder:Show()
-        else
-            placeholder:Hide()
-        end
-    end
-
-    -- 포커스 및 텍스트 변경 이벤트 연결
-    eb:SetCallback("OnTextChanged", UpdatePlaceholder)
-    eb.editBox:HookScript("OnEditFocusGained", UpdatePlaceholder)
-    eb.editBox:HookScript("OnEditFocusLost", UpdatePlaceholder)
-
     -- 저장 로직
     btn:SetScript("OnClick", function()
         rlt.db.global.optRecruitmentMemoText = eb:GetText()
@@ -1246,7 +1252,7 @@ function rlt:CreateMemoFrame()
 
     -- 관리 테이블에 등록
     rlt.LFGRecruitmentMemoFrame.frame = f
-    rlt.LFGRecruitmentMemoFrame.eb = eb
+    rlt.LFGRecruitmentMemoFrame.editBox = eb
     rlt.LFGRecruitmentMemoFrame.placeholder = placeholder 
     
     return f

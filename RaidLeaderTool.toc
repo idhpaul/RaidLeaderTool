@@ -2,7 +2,7 @@
 ## Title: RaidLeaderTool
 ## Notes: Use /rlt or /공장툴 to open Options
 ## Author: idhpaul
-## Version: 1.0.9
+## Version: 1.0.10
 ## SavedVariables: RaidLeaderToolDB
 ## OptionalDeps: CallbackHandler-1.0, LibSharedMedia-3.0, AceGUI-3.0
 
