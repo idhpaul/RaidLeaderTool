@@ -40,6 +40,7 @@ L["synergyOverlayTooltipTitleDiscription"] = "클릭하여 오버레이 여부�
 L["synergyButtonToggleTooltip"] = "토글상태를 전환합니다."
 L["recruitmentMemoTitle"] = "구인 문구"
 L["recruitmentMemoSave"] = "저장"
+L["recruitmentMemoEditBoxPlaceholder"] = "제목 및 세부 정보 내용을 입력 후 저장하세요."
 L["recruitmentMemoSaveMessage"] = "문구가 저장되었습니다."
 L["lfgBrowseParty"] = "파티 탐색하기"
 L["lfgBackGroup"] = "파티로 돌아가기"

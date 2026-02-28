@@ -338,9 +338,7 @@ function rlt:OnEnable()
 	    --print("(CategorySelection)파티 만들기 버튼 누름")
 
         if rlt.db.global.optGlobalEnable and rlt.db.global.optRecruitmentMemo then
-            local memo = rlt:GetOrCreateMemoFrame()
-            memo:Show()
-            memo.EditBox:SetCursorPosition(0)
+            rlt:UpdateAndShowMemo()
         end
 
         -- 만료 타이머 리셋
@@ -349,7 +347,10 @@ function rlt:OnEnable()
 
     LFGListFrame.EntryCreation.ListGroupButton:HookScript("OnClick", function(self)
 	    --print("(EntryCreation)파티 등록 버튼 누름")
-        if LFGRecruitmentMemoFrame then LFGRecruitmentMemoFrame:Hide() end
+        if rlt.LFGRecruitmentMemoFrame.frame then 
+            rlt.LFGRecruitmentMemoFrame.frame:Hide()
+            rlt.LFGRecruitmentMemoFrame.eb:ClearFocus() -- 포커스 해제 추가
+        end
 
         -- 만료 타이머 리셋
         rlt:ResetLFGTimeout()
@@ -357,22 +358,24 @@ function rlt:OnEnable()
 
     LFGListFrame.EntryCreation.CancelButton:HookScript("OnClick", function(self)
 	    --print("(EntryCreation)뒤로가기 버튼 누름")
-        if LFGRecruitmentMemoFrame then LFGRecruitmentMemoFrame:Hide() end
+        if rlt.LFGRecruitmentMemoFrame.frame then 
+            rlt.LFGRecruitmentMemoFrame.frame:Hide()
+            rlt.LFGRecruitmentMemoFrame.eb:ClearFocus() -- 포커스 해제 추가
+        end
     end)
 
     LFGListFrame.EntryCreation:HookScript("OnShow", function(self)
         if rlt.db.global.optGlobalEnable and rlt.db.global.optRecruitmentMemo then
-            local memo = rlt:GetOrCreateMemoFrame()
-            memo:Show()
-            memo.EditBox:SetCursorPosition(0)
-        else
-            if LFGRecruitmentMemoFrame then LFGRecruitmentMemoFrame:Hide() end
+            rlt:UpdateAndShowMemo()
         end
     end)
 
     PVEFrame:HookScript("OnHide", function(self)
         --print("PVEFrame이 닫혔습니다.")
-        if LFGRecruitmentMemoFrame then LFGRecruitmentMemoFrame:Hide() end
+        if rlt.LFGRecruitmentMemoFrame.frame then 
+            rlt.LFGRecruitmentMemoFrame.frame:Hide()
+            rlt.LFGRecruitmentMemoFrame.eb:ClearFocus() -- 포커스 해제 추가
+        end
     end)
 
 end
@@ -1121,32 +1124,47 @@ end
 ---
 --- MARK: 파티 모집글
 ---
-rlt.LFGRecruitmentMemoFrame = nil -- 프레임 객체 저장 변수
 
--- 메모장 프레임을 생성하거나 가져오는 함수
-function rlt:GetOrCreateMemoFrame()
-    if LFGRecruitmentMemoFrame then return LFGRecruitmentMemoFrame end
+rlt.LFGRecruitmentMemoFrame = rlt.LFGRecruitmentMemoFrame or {frame = nil, editBox = nil, placeholder=nil}
 
-    -- 1. 메인 외곽 프레임
-    LFGRecruitmentMemoFrame = CreateFrame("Frame", "RLT_LFGRecruitmentMemoFrame", LFGListFrame.EntryCreation, "BackdropTemplate")
-    LFGRecruitmentMemoFrame:SetSize(PVEFrame:GetWidth(), 250)
-    LFGRecruitmentMemoFrame:SetPoint("TOPLEFT", PVEFrame, "BOTTOMLEFT", 0, -30)
-    LFGRecruitmentMemoFrame:SetBackdrop({
+-- 메모장 프레임을 안전하게 가져오고 갱신하는 함수
+function rlt:UpdateAndShowMemo()
+    -- 프레임이 없으면 생성
+    if not rlt.LFGRecruitmentMemoFrame.frame then
+        rlt:CreateMemoFrame()
+    end
+
+    rlt.LFGRecruitmentMemoFrame.eb:SetText(rlt.db.global.optRecruitmentMemoText or "")
+    
+    rlt.LFGRecruitmentMemoFrame.frame:Show()
+    rlt.LFGRecruitmentMemoFrame.eb.frame:Show()
+end
+
+-- 메모장 프레임을 생성
+function rlt:CreateMemoFrame()
+
+    -- 배경 부모 프레임 (PVEFrame 하단에 부착)
+    local f = CreateFrame("Frame", "RLT_LFGMemoFrame", LFGListFrame.EntryCreation, "BackdropTemplate")
+    f:SetSize(PVEFrame:GetWidth(), 250)
+    f:SetPoint("TOPLEFT", PVEFrame, "BOTTOMLEFT", 0, -30)
+    f:SetBackdrop({
         bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
         tile = true, tileSize = 16, edgeSize = 16,
         insets = { left = 4, right = 4, top = 4, bottom = 4 }
     })
-    LFGRecruitmentMemoFrame:SetBackdropColor(0, 0, 0, 0.9)
+    f:SetBackdropColor(0, 0, 0, 0.9)
+    f:SetFrameLevel(100) -- 레이어 최상단 고정
 
-    -- 2. 타이틀 & 저장 버튼 (기존과 동일)
-    local title = LFGRecruitmentMemoFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    title:SetPoint("TOPLEFT", 15, -15)
+    -- 타이틀
+    local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    title:SetPoint("TOPLEFT", 15, -12)
     title:SetText(L["recruitmentMemoTitle"])
 
-    local btnContainer = CreateFrame("Frame", nil, LFGRecruitmentMemoFrame, "BackdropTemplate")
+    -- 저장 버튼
+    local btnContainer = CreateFrame("Frame", nil, f, "BackdropTemplate")
     btnContainer:SetSize(60, 26)
-    btnContainer:SetPoint("TOPRIGHT", LFGRecruitmentMemoFrame, "TOPRIGHT", -10, -8)
+    btnContainer:SetPoint("TOPRIGHT", f, "TOPRIGHT", -10, -8)
     btnContainer:SetBackdrop({
         bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -1156,63 +1174,64 @@ function rlt:GetOrCreateMemoFrame()
     btnContainer:SetBackdropColor(0.2, 0.2, 0.2, 0.8) -- 버튼 영역만 약간 더 밝게
     btnContainer:SetBackdropBorderColor(1, 0.82, 0, 1) -- 황금색 테두리로 강조
 
-    local saveBtn = CreateFrame("Button", nil, btnContainer)
-    saveBtn:SetAllPoints()
-    saveBtn:SetNormalFontObject("GameFontNormalSmall")
-    saveBtn:SetText(L["recruitmentMemoSave"])
-    saveBtn:SetScript("OnClick", function()
-        if rlt.db and rlt.db.global then
-            rlt.db.global.optRecruitmentMemoText = LFGRecruitmentMemoFrame.EditBox:GetText()
-            UIErrorsFrame:AddMessage(L["recruitmentMemoSaveMessage"], 0, 1, 0)
+    local btn = CreateFrame("Button", nil, btnContainer)
+    btn:SetAllPoints()
+    btn:SetNormalFontObject("GameFontNormalSmall")
+    btn:SetText(L["recruitmentMemoSave"])
+
+    -- AceGUI MultiLineEditBox 생성
+    local eb = AceGUI:Create("MultiLineEditBox")
+    eb.frame:SetParent(f)
+
+    if eb.button then eb.button:Hide() end -- 기본 확인 버튼 숨김
+    if eb.buttonBackground then eb.buttonBackground:Hide() end -- 버튼 배경 영역도 숨김
+
+    eb.frame:ClearAllPoints()
+    eb.frame:SetPoint("TOPLEFT", f, "TOPLEFT", 10, -35)
+    eb.frame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -10, 10)
+    eb.frame:SetFrameLevel(f:GetFrameLevel() + 10)
+    
+    eb:SetLabel(nil)
+
+    eb:SetFullWidth(true)
+    eb:SetFullHeight(true)
+
+    -- 힌트(Placeholder) 텍스트 생성 에디트박스 실제 입력 영역(eb.editBox) 위에 겹쳐서 표시
+    local placeholder = eb.editBox:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    placeholder:SetPoint("TOPLEFT", eb.editBox, "TOPLEFT", 0, 0)
+    placeholder:SetText(L["recruitmentMemoEditBoxPlaceholder"])
+    placeholder:SetTextColor(0.5, 0.5, 0.5, 0.8) -- 회색 글씨
+    placeholder:SetJustifyH("LEFT")
+    placeholder:SetJustifyV("TOP")
+
+    -- 힌트 표시 여부를 결정하는 함수
+    local function UpdatePlaceholder()
+        local text = eb:GetText()
+        if (not text or text == "") and not eb.editBox:HasFocus() then
+            placeholder:Show()
+        else
+            placeholder:Hide()
         end
-        LFGRecruitmentMemoFrame.EditBox:ClearFocus()
+    end
+
+    -- 포커스 및 텍스트 변경 이벤트 연결
+    eb:SetCallback("OnTextChanged", UpdatePlaceholder)
+    eb.editBox:HookScript("OnEditFocusGained", UpdatePlaceholder)
+    eb.editBox:HookScript("OnEditFocusLost", UpdatePlaceholder)
+
+    -- 저장 로직
+    btn:SetScript("OnClick", function()
+        rlt.db.global.optRecruitmentMemoText = eb:GetText()
+        UIErrorsFrame:AddMessage(L["recruitmentMemoSaveMessage"], 0, 1, 0)
+        eb:ClearFocus()
     end)
 
-    -- 3. ★ 에디트박스 테두리 프레임 (추가) ★
-    local ebBorder = CreateFrame("Frame", nil, LFGRecruitmentMemoFrame, "BackdropTemplate")
-    ebBorder:SetPoint("TOPLEFT", 10, -40)
-    ebBorder:SetPoint("BOTTOMRIGHT", -10, 10)
-    ebBorder:SetBackdrop({
-        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 14,
-        insets = { left = 4, right = 4, top = 4, bottom = 4 }
-    })
-    ebBorder:SetBackdropColor(0.1, 0.1, 0.1, 0.8) -- 입력창 배경을 약간 더 밝게
-    ebBorder:SetBackdropBorderColor(0.5, 0.5, 0.5, 1) -- 회색 테두리
-
-    -- 4. 스크롤 프레임 (ebBorder 안으로 배치)
-    local scrollFrame = CreateFrame("ScrollFrame", "RLT_RecruitmentMemoScrollFrame", ebBorder, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", 8, -8)
-    scrollFrame:SetPoint("BOTTOMRIGHT", -25, 8)
-
-    -- 5. 에디트박스
-    local eb = CreateFrame("EditBox", nil, scrollFrame)
-    eb:SetMultiLine(true)
-    eb:SetMaxLetters(2000)
-    eb:SetFontObject(ChatFontNormal)
-    eb:SetWidth(scrollFrame:GetWidth()) 
-    eb:SetAutoFocus(false)
+    -- 관리 테이블에 등록
+    rlt.LFGRecruitmentMemoFrame.frame = f
+    rlt.LFGRecruitmentMemoFrame.eb = eb
+    rlt.LFGRecruitmentMemoFrame.placeholder = placeholder 
     
-    scrollFrame:SetScrollChild(eb)
-
-    -- 렌더링 강제 갱신 로직 (텍스트 안보임 현상 방지)
-    eb:SetScript("OnTextChanged", function(self)
-        ScrollingEdit_OnTextChanged(self, self:GetParent())
-    end)
-    eb:SetScript("OnCursorChanged", function(self, x, y, w, h)
-        ScrollingEdit_OnCursorChanged(self, x, y, w, h)
-    end)
-    eb:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-
-    -- 초기 텍스트 설정 및 커서 정렬
-    local savedText = (rlt.db and rlt.db.global and rlt.db.global.optRecruitmentMemoText) or ""
-    eb:SetText(savedText)
-    eb:SetCursorPosition(0) 
-
-    LFGRecruitmentMemoFrame.EditBox = eb
-    
-    return LFGRecruitmentMemoFrame
+    return f
 end
 
 ---
