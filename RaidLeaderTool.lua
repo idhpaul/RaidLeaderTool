@@ -12,7 +12,7 @@ local LDBIcon			= LibStub("LibDBIcon-1.0")
 
 local ADDON_NAME = "RaidLeaderTool"
 local ADDON_DB_NAME = "RaidLeaderToolDB"
-local CURRENT_VERSION		= "1.0.10"
+local CURRENT_VERSION		= "1.0.11"
 
 local Default_PROFILE = {
     global = {
