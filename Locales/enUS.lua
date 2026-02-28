@@ -1,5 +1,7 @@
 local L = LibStub("AceLocale-3.0"):NewLocale("RaidLeaderToolLocale", "enUS",true)
 
+L["confirm"] = "Ok"
+
 -- Asset Sound
 L["assetPhoneSound"] = "Phone"
 L["assetReadyCheckSound"] = "Ready Check"
@@ -38,12 +40,19 @@ L["synergyOverlayTooltipTitleEnable"] = "|cff00ff00[Enable]|r"
 L["synergyOverlayTooltipTitleDisable"] = "|cffaaaaaa[Disable]|r"
 L["synergyOverlayTooltipTitleDiscription"] = "Click to show/hide overlay."
 L["synergyButtonToggleTooltip"] = "Click to toggle status"
+L["synergyCreatedTag"] = "|cffffd100[Created]|r "
+L["synergyJoinedTag"] = "|cff00ff00[Joined]|r "
+L["synergyExpireRemaing"] = "%s(Until expiry %02d:%02d)|r"
+L["synergyExpired"] = "|cffff0000(Expired)|r"
 L["recruitmentMemoTitle"] = "Recruitment Memo"
 L["recruitmentMemoSave"] = "Save"
 L["recruitmentMemoEditBoxPlaceholder"] = "Enter your presets for Title and Details."
 L["recruitmentMemoSaveMessage"] = "Saved Memo"
 L["lfgBrowseParty"] = "Browse Group"
 L["lfgBackGroup"] = "Back"
+
+L["dialog_expirationWarningText"] = "|cffffd100[RaidLeaderTool]|r\n\n|cffff4444Group listing expires in 3 minutes!|r\n\nFollow these steps to |cff00ff00refresh|r the timer:\nClick |cffffff00[Edit]|r -> Click |cffffff00[Post]|r\n\n|cff888888(Timer refreshes even without changes)|r"
+
 
 -- Synergy
 L["warrior"] = "Warrior"

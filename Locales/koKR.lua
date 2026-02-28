@@ -1,5 +1,8 @@
 local L = LibStub("AceLocale-3.0"):NewLocale("RaidLeaderToolLocale", "koKR")
 
+-- Common
+L["confirm"] = "확인"
+
 -- Asset Sound
 L["assetPhoneSound"] = "전화벨"
 L["assetReadyCheckSound"] = "전투 준비(시스템)"
@@ -38,12 +41,19 @@ L["synergyOverlayTooltipTitleEnable"] = "|cff00ff00[고정됨]|r"
 L["synergyOverlayTooltipTitleDisable"] = "|cffaaaaaa[해제됨]|r"
 L["synergyOverlayTooltipTitleDiscription"] = "클릭하여 오버레이 여부를 설정합니다."
 L["synergyButtonToggleTooltip"] = "토글상태를 전환합니다."
+L["synergyCreatedTag"] = "|cffffd100[생성]|r "
+L["synergyJoinedTag"] = "|cff00ff00[합류]|r "
+L["synergyExpireRemaing"] = "%s(남은 만료 시간 %02d:%02d)|r"
+L["synergyExpired"] = "|cffff0000(만료됨)|r"
 L["recruitmentMemoTitle"] = "구인 문구"
 L["recruitmentMemoSave"] = "저장"
 L["recruitmentMemoEditBoxPlaceholder"] = "제목 및 세부 정보 내용을 입력 후 저장하세요."
 L["recruitmentMemoSaveMessage"] = "문구가 저장되었습니다."
 L["lfgBrowseParty"] = "파티 탐색하기"
 L["lfgBackGroup"] = "파티로 돌아가기"
+
+-- Dialog
+L["dialog_expirationWarningText"] = "|cffffd100[RaidLeaderTool]|r\n\n|cffff4444파티 모집 만료 3분 전입니다!|r\n\n아래 단계를 실행하면 대기 시간이 |cff00ff00갱신|r됩니다.\n|cffffff00[편집]|r 클릭 -> |cffffff00[작성 완료]|r 클릭\n\n|cff888888(내용을 수정하지 않아도 만료 타이머 갱신됩니다)|r"
 
 -- Synergy
 L["warrior"] = "전사"

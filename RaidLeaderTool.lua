@@ -616,7 +616,7 @@ function rlt:UpdateTimerDisplay()
     if joinTime and joinTime > 0 then
         local diff = currentTime - joinTime
         local m, s = math.floor(diff / 60), math.floor(diff % 60)
-        local tag = UnitIsGroupLeader("player") and "|cffffd100[생성]|r " or "|cff00ff00[합류]|r "
+        local tag = UnitIsGroupLeader("player") and L["synergyCreatedTag"] or L["synergyJoinedTag"]
         self.SynergyFrame.timerText:SetFormattedText("%s%02d:%02d", tag, m, s)
     end
 
@@ -639,10 +639,10 @@ function rlt:UpdateTimerDisplay()
             local rm, rs = math.floor(remaining / 60), math.floor(remaining % 60)
             -- 1분 미만이면 빨간색, 아니면 회색계열
             local color = (remaining < 60) and "|cffff0000" or "|cffaaaaaa"
-            self.SynergyFrame.expireText:SetFormattedText("%s(만료 %02d:%02d)|r", color, rm, rs)
+            self.SynergyFrame.expireText:SetFormattedText(L["synergyExpireRemaing"], color, rm, rs)
             self.SynergyFrame.expireText:Show()
         else
-            self.SynergyFrame.expireText:SetText("|cffff0000(만료됨)|r")
+            self.SynergyFrame.expireText:SetText(L["synergyExpired"])
         end
     else
         -- 파티장이 아니거나 모집 중이 아니면 숨김
@@ -653,8 +653,7 @@ function rlt:UpdateTimerDisplay()
 end
 
 StaticPopupDialogs["RLT_EXPIRATION_WARNING"] = {
-    text = "|cffffd100[RaidLeaderTool]|r\n\n|cffff4444파티 모집 만료 3분 전입니다!|r\n\n아래 단계를 실행하면 대기 시간이 |cff00ff00갱신|r됩니다.\n|cffffff00[편집]|r 클릭 -> |cffffff00[작성 완료]|r 클릭\n\n|cff888888(내용을 수정하지 않아도 만료 타이머 갱신됩니다)|r",
-    button1 = "확인",
+    text = L["dialog_expirationWarningText"],
     timeout = 0,
     whileDead = true,
     hideOnEscape = true,
@@ -831,20 +830,20 @@ function rlt:CreateSynergyUI()
         end
     end)
 
-    -- [1. 경과 시간 타이머] (위쪽)
-    local timerText = TitlebarContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    timerText:SetFont([[Fonts\2002.TTF]], 11, "OUTLINE")
-    timerText:SetPoint("BOTTOM", TitlebarContainer, "CENTER", 0, 1) -- 약간 위
-    timerText:SetText("00:00")
-    self.SynergyFrame.timerText = timerText
+    -- -- [1. 경과 시간 타이머] (위쪽)
+    -- local timerText1 = TitlebarContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    -- timerText1:SetFont([[Fonts\2002.TTF]], 11, "OUTLINE")
+    -- timerText1:SetPoint("BOTTOM", TitlebarContainer, "CENTER", 0, 1) -- 약간 위
+    -- timerText1:SetText("00:00")
+    -- self.SynergyFrame.timerText = timerText1
 
-    -- [2. 만료 카운트다운] (아래쪽)
-    local expireText = TitlebarContainer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    expireText:SetFont([[Fonts\2002.TTF]], 10, "OUTLINE")
-    expireText:SetPoint("TOP", TitlebarContainer, "CENTER", 0, -1) -- 약간 아래
-    expireText:SetTextColor(1, 0.8, 0)
-    expireText:SetText("(만료 30:00)")
-    self.SynergyFrame.expireText = expireText
+    -- -- [2. 만료 카운트다운] (아래쪽)
+    -- local expireText1 = TitlebarContainer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    -- expireText1:SetFont([[Fonts\2002.TTF]], 10, "OUTLINE")
+    -- expireText1:SetPoint("TOP", TitlebarContainer, "CENTER", 0, -1) -- 약간 아래
+    -- expireText1:SetTextColor(1, 0.8, 0)
+    -- expireText1:SetText("(만료 30:00)")
+    -- self.SynergyFrame.expireText = expireText1
 
     -- [2. HeaderContainer] (텍스트 양에 따라 가변 높이)
     local HeaderContainer = CreateFrame("Frame", nil, display)
@@ -900,12 +899,6 @@ function rlt:CreateSynergyUI()
         
         return btn
     end
-
-    -- [3. ModeButtonContainer]
-    local ModeButtonContainer = CreateFrame("Frame", nil, display)
-    ModeButtonContainer:SetSize(contentWidth, 25)
-    ModeButtonContainer:SetPoint("TOP", HeaderContainer, "BOTTOM", 0, -15)
-    self.ModeBtnCont = ModeButtonContainer
 
     -- 1. 보기 모드 전환 버튼
     local viewBtn = CreateCustomButton(ModeButtonContainer, 100, 20)
@@ -992,6 +985,28 @@ function rlt:CreateSynergyUI()
         end
     end
 
+    -- [5. FooterContainer] (모드에 따라 가변 높이)
+    local FooterContainer = CreateFrame("Frame", nil, display)
+    FooterContainer:SetWidth(contentWidth)
+    FooterContainer:SetPoint("TOP", DataContainer, "BOTTOM", 0, -10)
+    self.FooterCont = FooterContainer
+
+    -- [1. 경과 시간 타이머] (위쪽)
+    local timerText = FooterContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    timerText:SetFont([[Fonts\2002.TTF]], 11, "OUTLINE")
+    timerText:SetPoint("LEFT", FooterContainer, "LEFT", 0, -1)
+    timerText:SetText("00:00")
+    self.SynergyFrame.timerText = timerText
+
+    -- [2. 만료 카운트다운] (아래쪽)
+    local expireText = FooterContainer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    expireText:SetFont([[Fonts\2002.TTF]], 10, "OUTLINE")
+    expireText:SetPoint("RIGHT", FooterContainer, "RIGHT", 0, -1)
+    expireText:SetTextColor(1, 0.8, 0)
+    expireText:SetText("(만료 30:00)")
+    self.SynergyFrame.expireText = expireText
+
+
     if not self.pveHooked then
         hooksecurefunc("PVEFrame_ShowFrame", function() self:UpdateSynergyVisibility() end)
         if PVEFrame then PVEFrame:HookScript("OnHide", function() self:UpdateSynergyVisibility() end) end
@@ -1017,12 +1032,15 @@ function rlt:UpdateSynergyFrameSize()
     end
     self.DataCont:SetHeight(dataH)
 
+    self.FooterCont:SetHeight(10)
+
     -- 3. 부모 프레임 전체 높이 재계산 (모든 컨테이너 + 마진)
     local totalHeight = 10 + -- 상단 마진
                         self.Titlebar:GetHeight() + 10 + 
                         self.HeaderCont:GetHeight() + 15 + 
                         self.ModeBtnCont:GetHeight() + 10 + 
-                        self.DataCont:GetHeight() + 20 -- 하단 마진
+                        self.DataCont:GetHeight() + 10 +
+                        self.FooterCont:GetHeight() + 5
     
     self.SynergyFrame:SetHeight(totalHeight)
 end
