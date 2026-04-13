@@ -304,10 +304,6 @@ function rlt:SlashCommandExecute()
     if AceConfigDialog.OpenFrames[ADDON_NAME] then AceConfigDialog:Close(ADDON_NAME) else AceConfigDialog:Open(ADDON_NAME) end
 end
 
-local function OnPostClick()
-    print("|cff00ff00[rlt]|r 파티 만들기 버튼 클릭됨 -> 보임")
-end
-
 function rlt:OnEnable()
     self:Print(ADDON_NAME.."("..CURRENT_VERSION..")- /rlt or /공장툴 ")
 
@@ -318,12 +314,9 @@ function rlt:OnEnable()
     self:RegisterEvent("GROUP_LEFT")
     self:RegisterEvent("PLAYER_REGEN_DISABLED", function() self:UpdateSynergyVisibility() end)
     self:RegisterEvent("PLAYER_REGEN_ENABLED", function() self:UpdateSynergyVisibility() end)
+    self:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED", function() self:UpdateSynergyVisibility() end)
     self:RegisterEvent("LFG_LIST_ENTRY_EXPIRED_TIMEOUT")
-    self:RegisterEvent("UNIT_SPELLCAST_SENT") --UNIT_SPELLCAST_SENT
 
-    -- [핵심] 리로드 시점에 이미 파티 중이라면 절대로 데이터를 0으로 밀면 안 됩니다.
-    -- IsInGroup()이 리로드 직후 찰나의 순간 false를 뱉을 수 있으므로 
-    -- C_LFGList.HasActiveEntryInfo()까지 더블 체크합니다.
     if not IsInGroup() and not C_LFGList.HasActiveEntryInfo() then
         self.db.global.optPartyJoinTimestamp = 0
         self.db.global.optLfgExpireTimestamp = 0
@@ -380,65 +373,6 @@ function rlt:OnEnable()
 
 end
 
-function rlt:UNIT_SPELLCAST_SENT(event, unit, castID, spellID)
-
-    -- 블러드류 주문 ID 테이블
-    local bloodSpells = {
-        [80353]  = true, -- 시간 왜곡
-        [2825]   = true, -- 피의 욕망
-        [32182]  = true, -- 영웅심
-        [264667] = true, -- 원초적 분노
-        [342242] = true, -- 시간 왜곡 (직업 특성 등)
-        [390386] = true, -- 위상의 격노
-        [444257] = true, -- 우레의 북
-        [466904] = true,  -- 유린자의 울음소리
-    }
-
-    -- 플레이어가 위 주문 중 하나를 시전했을 때만 실행
-    if unit == "player" and bloodSpells[spellID] then
-        self:Print("[Debug]|cFF00FF00블러드 확인 전!|r")
-        local success, err = pcall(function()
-            -- 1. 채팅 메시지 설정
-            local playerName = UnitName("player")
-            local spellName = C_Spell.GetSpellInfo(spellID) or "블러드"
-            local message = string.format("[%s] - 블러드 시전! / RaidLeaderTool", playerName)
-            
-            -- 2. 채널 판단 (레이드면 RAID, 파티면 PARTY, 혼자면 SAY)
-            local chatType = "SAY"
-            if IsInRaid() then
-                chatType = "RAID"
-            elseif IsInGroup() then
-                chatType = "PARTY"
-            end
-            
-            -- 3. 메시지 전송
-            C_ChatInfo.SendChatMessage(message, chatType)
-
-            -- 디버그용 출력 (선택 사항)
-            self:Print("[Debug]"..message)
-            self:Print("[Debug]|cFF00FF00블러드 알림 전송 완료!|r")
-        end)
-
-        if not success then
-            self:Printf("|cFFFF0000실행 에러:|r %s", err)
-        end
-    end
-    -- if unit == "player" and spellID == 213771 then
-        
-    --     -- pcall을 사용하여 시전 알림 로직 실행
-    --     local success, err = pcall(function()
-    --         self:Print("|cFF00FF00시전 성공!|r 사운드를 재생합니다.")
-            
-    --         PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON, "Master")
-    --     end)
-
-    --     -- 만약 pcall 내부에서 문제가 생겼을 경우 처리
-    --     if not success then
-    --         self:Printf("|cFFFF0000실행 에러:|r %s", err)
-    --     end
-    -- end
-end
-
 ---
 --- MARK: 이벤트 핸들러
 ---
@@ -448,10 +382,8 @@ rlt.lastApplicantCount = 0
 
 function rlt:LFG_LIST_APPLICANT_UPDATED()
 
-    -- [타이머 리셋 코드 삽입]
     self:ResetLFGTimeout()
 
-    -- --- 여기서부터 기존 코드 그대로 유지 ---
     if not self.db.global.optGlobalEnable or not self.db.global.optLfgAlert then 
         return 
     end
@@ -848,39 +780,94 @@ function rlt:GetSynergyData()
     local data = {
         total = 0,
         classCount = {},
-        roleCount = {TANK = 0, HEALER = 0, DAMAGER = 0, NONE = 0},
+        roleCount = {TANK = 0, HEALER = 0, DAMAGER = 0, MELEE = 0, RANGED = 0, NONE = 0},
         tierCount = {DREADFUL = 0, MYSTIC = 0, VENERATED = 0, ZENITH = 0},
-        classicTierCount = {CONQUEROR = 0, PROTECTOR = 0, VANQUISHER = 0, DEATH = 0}
     }
+
     local classes = {"WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST", "DEATHKNIGHT", "SHAMAN", "MAGE", "WARLOCK", "MONK", "DRUID", "DEMONHUNTER", "EVOKER"}
     for _, c in ipairs(classes) do data.classCount[c] = 0 end
 
-    local numGroup = GetNumGroupMembers()
-    local isRaid = IsInRaid()
-    local prefix = isRaid and "raid" or "party"
-    local maxIdx = isRaid and numGroup or (numGroup > 0 and numGroup or 0)
+    -- 근딜 특성 ID 테이블 (본섭 기준)
+    local meleeSpecs = {
+        [71]=true, [72]=true,    -- 전사(무기, 분노)
+        [70]=true,               -- 기사(징벌)
+        [259]=true, [260]=true, [261]=true, -- 도적(전체)
+        [251]=true, [252]=true,  -- 죽기(냉기, 부정)
+        [263]=true,              -- 술사(고양)
+        [103]=true,              -- 드루(야성)
+        [255]=true,              -- 냥꾼(생존)
+        [269]=true,              -- 수도(풍운)
+        [577]=true               -- 악사(파멸)
+    }
 
-    for i = 1, maxIdx do
-        local unit = prefix..i
+    local units = {}
+    if IsInRaid() then
+        for i = 1, GetNumGroupMembers() do table.insert(units, "raid" .. i) end
+    else
+        table.insert(units, "player")
+        if IsInGroup() then
+            for i = 1, GetNumGroupMembers() - 1 do table.insert(units, "party" .. i) end
+        end
+    end
+
+    for _, unit in ipairs(units) do
         if UnitExists(unit) then
             local _, class = UnitClass(unit)
+            local role = UnitGroupRolesAssigned(unit)
             if class then
                 data.total = data.total + 1
                 data.classCount[class] = (data.classCount[class] or 0) + 1
-                local role = UnitGroupRolesAssigned(unit)
                 data.roleCount[role] = (data.roleCount[role] or 0) + 1
+
+                -- 딜러 세부 분류
+                if role == "DAMAGER" then
+                    local specID = (unit == "player") and GetSpecializationInfo(GetSpecialization()) or GetInspectSpecialization(unit)
+                    print("[debug] spec id : %d",specID)
+                    if specID and specID > 0 then
+                        if meleeSpecs[specID] then
+                            data.roleCount.MELEE = data.roleCount.MELEE + 1
+                        else
+                            data.roleCount.RANGED = data.roleCount.RANGED + 1
+                        end
+                    else
+                        -- 특성 정보가 없을 시 기본 클래스 속성으로 유추
+                        if class == "ROGUE" or class == "WARRIOR" or class == "DEMONHUNTER" or class == "DEATHKNIGHT" then
+                            data.roleCount.MELEE = data.roleCount.MELEE + 1
+                        else
+                            data.roleCount.RANGED = data.roleCount.RANGED + 1
+                        end
+                    end
+                end
             end
         end
     end
 
-    if not isRaid or numGroup == 0 then
-        local _, class = UnitClass("player")
-        if data.classCount[class] == 0 then
-            data.total = data.total + 1
-            data.classCount[class] = 1
-            data.roleCount[UnitGroupRolesAssigned("player")] = (data.roleCount[UnitGroupRolesAssigned("player")] or 0) + 1
-        end
-    end
+    -- local numGroup = GetNumGroupMembers()
+    -- local isRaid = IsInRaid()
+    -- local prefix = isRaid and "raid" or "party"
+    -- local maxIdx = isRaid and numGroup or (numGroup > 0 and numGroup or 0)
+
+    -- for i = 1, maxIdx do
+    --     local unit = prefix..i
+    --     if UnitExists(unit) then
+    --         local _, class = UnitClass(unit)
+    --         if class then
+    --             data.total = data.total + 1
+    --             data.classCount[class] = (data.classCount[class] or 0) + 1
+    --             local role = UnitGroupRolesAssigned(unit)
+    --             data.roleCount[role] = (data.roleCount[role] or 0) + 1
+    --         end
+    --     end
+    -- end
+
+    -- if not isRaid or numGroup == 0 then
+    --     local _, class = UnitClass("player")
+    --     if data.classCount[class] == 0 then
+    --         data.total = data.total + 1
+    --         data.classCount[class] = 1
+    --         data.roleCount[UnitGroupRolesAssigned("player")] = (data.roleCount[UnitGroupRolesAssigned("player")] or 0) + 1
+    --     end
+    -- end
 
     local tierGroups = {
         DREADFUL = {"PRIEST", "MAGE", "WARLOCK"}, MYSTIC = {"ROGUE", "MONK", "DRUID", "DEMONHUNTER"}, 
@@ -1011,25 +998,25 @@ function rlt:CreateSynergyUI()
     end)
 
     -- [2. 셋팅 버튼: 톱니 아이콘 형태]
-    -- local settingBtn = CreateFrame("Button", nil, TitlebarContainer)
-    -- settingBtn:SetSize(45,45) 
-    -- settingBtn:SetPoint("RIGHT", pinBtn, "LEFT", 10, 0)
+    local settingBtn = CreateFrame("Button", nil, TitlebarContainer)
+    settingBtn:SetSize(45,45) 
+    settingBtn:SetPoint("RIGHT", pinBtn, "LEFT", 10, 0)
 
-    -- local settingTex = settingBtn:CreateTexture(nil, "ARTWORK")
-    -- settingTex:SetSize(35, 35) 
-    -- settingTex:SetPoint("CENTER", settingBtn, "CENTER", 0, 0)
-    -- settingTex:SetTexture([[Interface\AddOns\RaidLeaderTool\Assets\Icons\settingGray]])
-    -- settingTex:SetVertexColor(1, 1, 1, 0.8)
-    -- settingBtn.tex = settingTex 
-    -- -- 하이라이트 효과 (마우스 올리면 밝아짐)
-    -- settingBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+    local settingTex = settingBtn:CreateTexture(nil, "ARTWORK")
+    settingTex:SetSize(35, 35) 
+    settingTex:SetPoint("CENTER", settingBtn, "CENTER", 0, 0)
+    settingTex:SetTexture([[Interface\AddOns\RaidLeaderTool\Assets\Icons\settingGray]])
+    settingTex:SetVertexColor(1, 1, 1, 0.8)
+    settingBtn.tex = settingTex 
+    -- 하이라이트 효과 (마우스 올리면 밝아짐)
+    settingBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
 
-    -- settingBtn:SetScript("OnClick", function()
+    settingBtn:SetScript("OnClick", function()
 
-    --     self:UpdateSynergyVisibility()
+        self:UpdateSynergyVisibility()
         
-    --     rlt:CreateSynergySettingUI()
-    -- end)
+        rlt:CreateSynergySettingUI()
+    end)
 
     -- 타이틀바 텍스트
     local titleText1 = TitlebarContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -1213,7 +1200,6 @@ function rlt:CreateSynergyUI()
     self:UpdateSynergyVisibility()
 end
 
--- [높이 계산 함수 추가]
 function rlt:UpdateSynergyFrameSize()
     if not self.SynergyFrame then return end
 
@@ -1248,9 +1234,10 @@ function rlt:UpdateSynergyDisplay()
     
     -- [1. 상단 요약 정보]
     local header = string.format("\n"..L["synergyTotalSummaryFormat"], data.total, data.roleCount.TANK, data.roleCount.HEALER, data.roleCount.DAMAGER)
+    local subDetail = string.format(L["synergyTotalSummaryDetailFormat"], data.roleCount.MELEE, data.roleCount.RANGED)
     local t1 = string.format(L["synergyTotalTierFormat"], data.tierCount.DREADFUL, data.tierCount.MYSTIC, data.tierCount.VENERATED, data.tierCount.ZENITH)
 
-    self.SynergyHeader:SetText("|cffffffff" .. header .. "|r\n" .. t1)
+    self.SynergyHeader:SetText("|cffffffff" .. header .. subDetail .. "|r\n" .. t1)
 
     -- [2. 하단 상세 정보 (아이콘 vs 텍스트)]
     if self.db.global.useIconView then

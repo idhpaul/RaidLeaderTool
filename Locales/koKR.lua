@@ -34,6 +34,7 @@ L["optGroupListDiscription"] = "- 파티에 이미 속해있을때 파티 탐색
 L["newLfgAlertText"] = "신규 신청!"
 L["newLfgExpiredTimeoutText"] = "파티 대기시간 만료!"
 L["synergyTotalSummaryFormat"] = "|cffffff00총원: %d|r \n   - |cFF80D9FF탱: %d|r \n   - |cFF2ECC71힐: %d|r \n   - |cFFE67E22딜: %d|r"
+L["synergyTotalSummaryDetailFormat"] = "\n      (|cffFF4444근딜: %d|r  /  |cff4444FF원딜: %d|r)"
 L["synergyTotalTierFormat"] = "\n|cffffd100[티어]|r \n   - 천 : %d\n   - 가죽 : %d\n   - 사슬 : %d\n   - 판금 : %d"
 L["synergyTotalClassicTierFormat"] = "\n|cffffd100[Tier(before Midnight)]|r \n   - 성사주 : %d\n   - 전도수기 : %d\n   - 냥법드 : %d\n   - 죽흑악 : %d"
 L["synergyOverlayTooltipTitle"] = "오버레이"
