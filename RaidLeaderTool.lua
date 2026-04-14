@@ -2,9 +2,10 @@ local AceGUI			= LibStub("AceGUI-3.0")
 local AceConfig			= LibStub("AceConfig-3.0")
 local AceConfigDialog	= LibStub("AceConfigDialog-3.0")
 local AceDB				= LibStub("AceDB-3.0")
+local L					= LibStub("AceLocale-3.0"):GetLocale("RaidLeaderToolLocale")
+local LibSpecialization = LibStub("LibSpecialization")
 local AceDBOptions		= LibStub("AceDBOptions-3.0")
 local LibDualSpec		= LibStub("LibDualSpec-1.0")
-local L					= LibStub("AceLocale-3.0"):GetLocale("RaidLeaderToolLocale")
 local CallbackHandler	= LibStub("CallbackHandler-1.0")
 local LSM				= LibStub("LibSharedMedia-3.0")
 local LDB				= LibStub("LibDataBroker-1.1")
@@ -304,6 +305,57 @@ function rlt:SlashCommandExecute()
     if AceConfigDialog.OpenFrames[ADDON_NAME] then AceConfigDialog:Close(ADDON_NAME) else AceConfigDialog:Open(ADDON_NAME) end
 end
 
+local function UpdateNameColor(frame)
+    if not frame or frame:IsForbidden() then return end
+    
+    local unit = frame.unit or frame.displayedUnit
+    if not unit or not UnitExists(unit) or not UnitIsPlayer(unit) then 
+        if frame.rltLeaderIcon then frame.rltLeaderIcon:Hide() end
+        return 
+    end
+    
+    -- 1. 이름 텍스트 설정 (외곽선 + 직업 색상)
+    local nameText = frame.name
+    if nameText and nameText.SetFont then
+        local fontPath, fontSize, fontFlags = nameText:GetFont()
+        
+        -- 외곽선 추가
+        if not fontFlags or not fontFlags:find("OUTLINE") then
+            nameText:SetFont(fontPath, fontSize, "OUTLINE")
+        end
+
+        -- 직업 색상 적용
+        local _, class = UnitClass(unit)
+        if class and RAID_CLASS_COLORS[class] then
+            local color = RAID_CLASS_COLORS[class]
+            nameText:SetTextColor(color.r, color.g, color.b)
+        end
+    end
+
+    -- 2. 리더 아이콘 설정 (생성 및 업데이트)
+    if not frame.rltLeaderIcon then
+        frame.rltLeaderIcon = frame:CreateTexture(nil, "OVERLAY")
+        frame.rltLeaderIcon:SetSize(12, 12)
+        -- 이름 왼쪽 옆에 배치
+        frame.rltLeaderIcon:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 7)
+    end
+
+    local isLeader = UnitIsGroupLeader(unit)
+    local isAssistant = UnitIsGroupAssistant(unit)
+
+    if isLeader or isAssistant then
+        local texture = isLeader and "Interface\\GroupFrame\\UI-Group-LeaderIcon" 
+                                 or "Interface\\GroupFrame\\UI-Group-AssistantIcon"
+        frame.rltLeaderIcon:SetTexture(texture)
+        frame.rltLeaderIcon:Show()
+    else
+        frame.rltLeaderIcon:Hide()
+    end
+end
+
+-- 1. 데이터를 담아둘 외부 변수
+local groupSpecData = {}
+
 function rlt:OnEnable()
     self:Print(ADDON_NAME.."("..CURRENT_VERSION..")- /rlt or /공장툴 ")
 
@@ -371,7 +423,19 @@ function rlt:OnEnable()
         end
     end)
 
+    hooksecurefunc("CompactUnitFrame_UpdateName",UpdateNameColor)
+
+    LibSpecialization.RegisterGroup(rlt, function(specId, role, position, playerName, talents)
+        groupSpecData[playerName] = {
+            specId = specId,
+            role = role,
+            position = position -- "MELEE" 또는 "RANGED"
+        }
+        --print(string.format("[LibSpec] %s 정보 업데이트 완료!(specID : %d), (role : %s), (position : %s)", playerName,specId,role,position))
+    end)
+
 end
+
 
 ---
 --- MARK: 이벤트 핸들러
@@ -776,6 +840,7 @@ function rlt:CreateSynergySettingUI()
     self.SynergySettingFrame = f
 end
 
+
 function rlt:GetSynergyData()
     local data = {
         total = 0,
@@ -783,23 +848,10 @@ function rlt:GetSynergyData()
         roleCount = {TANK = 0, HEALER = 0, DAMAGER = 0, MELEE = 0, RANGED = 0, NONE = 0},
         tierCount = {DREADFUL = 0, MYSTIC = 0, VENERATED = 0, ZENITH = 0},
     }
-
+    
     local classes = {"WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST", "DEATHKNIGHT", "SHAMAN", "MAGE", "WARLOCK", "MONK", "DRUID", "DEMONHUNTER", "EVOKER"}
     for _, c in ipairs(classes) do data.classCount[c] = 0 end
-
-    -- 근딜 특성 ID 테이블 (본섭 기준)
-    local meleeSpecs = {
-        [71]=true, [72]=true,    -- 전사(무기, 분노)
-        [70]=true,               -- 기사(징벌)
-        [259]=true, [260]=true, [261]=true, -- 도적(전체)
-        [251]=true, [252]=true,  -- 죽기(냉기, 부정)
-        [263]=true,              -- 술사(고양)
-        [103]=true,              -- 드루(야성)
-        [255]=true,              -- 냥꾼(생존)
-        [269]=true,              -- 수도(풍운)
-        [577]=true               -- 악사(파멸)
-    }
-
+    
     local units = {}
     if IsInRaid() then
         for i = 1, GetNumGroupMembers() do table.insert(units, "raid" .. i) end
@@ -814,23 +866,26 @@ function rlt:GetSynergyData()
         if UnitExists(unit) then
             local _, class = UnitClass(unit)
             local role = UnitGroupRolesAssigned(unit)
+            local name = GetUnitName(unit, true) -- 서버명 포함 이름
+            
             if class then
                 data.total = data.total + 1
                 data.classCount[class] = (data.classCount[class] or 0) + 1
                 data.roleCount[role] = (data.roleCount[role] or 0) + 1
 
-                -- 딜러 세부 분류
+                -- groupSpecData 활용
                 if role == "DAMAGER" then
-                    local specID = (unit == "player") and GetSpecializationInfo(GetSpecialization()) or GetInspectSpecialization(unit)
-                    print("[debug] spec id : %d",specID)
-                    if specID and specID > 0 then
-                        if meleeSpecs[specID] then
+                    local info = groupSpecData[name]
+                    
+                    if info and info.position then
+                        -- 저장된 데이터가 있을 경우
+                        if info.position == "MELEE" then
                             data.roleCount.MELEE = data.roleCount.MELEE + 1
                         else
                             data.roleCount.RANGED = data.roleCount.RANGED + 1
                         end
                     else
-                        -- 특성 정보가 없을 시 기본 클래스 속성으로 유추
+                        -- 아직 라이브러리가 수집하지 못했을 때 (예외 처리)
                         if class == "ROGUE" or class == "WARRIOR" or class == "DEMONHUNTER" or class == "DEATHKNIGHT" then
                             data.roleCount.MELEE = data.roleCount.MELEE + 1
                         else
@@ -841,33 +896,6 @@ function rlt:GetSynergyData()
             end
         end
     end
-
-    -- local numGroup = GetNumGroupMembers()
-    -- local isRaid = IsInRaid()
-    -- local prefix = isRaid and "raid" or "party"
-    -- local maxIdx = isRaid and numGroup or (numGroup > 0 and numGroup or 0)
-
-    -- for i = 1, maxIdx do
-    --     local unit = prefix..i
-    --     if UnitExists(unit) then
-    --         local _, class = UnitClass(unit)
-    --         if class then
-    --             data.total = data.total + 1
-    --             data.classCount[class] = (data.classCount[class] or 0) + 1
-    --             local role = UnitGroupRolesAssigned(unit)
-    --             data.roleCount[role] = (data.roleCount[role] or 0) + 1
-    --         end
-    --     end
-    -- end
-
-    -- if not isRaid or numGroup == 0 then
-    --     local _, class = UnitClass("player")
-    --     if data.classCount[class] == 0 then
-    --         data.total = data.total + 1
-    --         data.classCount[class] = 1
-    --         data.roleCount[UnitGroupRolesAssigned("player")] = (data.roleCount[UnitGroupRolesAssigned("player")] or 0) + 1
-    --     end
-    -- end
 
     local tierGroups = {
         DREADFUL = {"PRIEST", "MAGE", "WARLOCK"}, MYSTIC = {"ROGUE", "MONK", "DRUID", "DEMONHUNTER"}, 
