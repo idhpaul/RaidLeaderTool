@@ -1,6 +1,17 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [1.0.12] - 2026.04.15.
+
+### Added
+- Count Melee/Range (use LibSpecialization)
+
+### Changed
+
+### Fixed
+
+--------
+
 ## [1.0.10] - 2026.02.28.
 
 ### Added

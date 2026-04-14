@@ -423,7 +423,7 @@ function rlt:OnEnable()
         end
     end)
 
-    hooksecurefunc("CompactUnitFrame_UpdateName",UpdateNameColor)
+    --hooksecurefunc("CompactUnitFrame_UpdateName",UpdateNameColor)
 
     LibSpecialization.RegisterGroup(rlt, function(specId, role, position, playerName, talents)
         groupSpecData[playerName] = {
@@ -1025,26 +1025,26 @@ function rlt:CreateSynergyUI()
         end
     end)
 
-    -- [2. 셋팅 버튼: 톱니 아이콘 형태]
-    local settingBtn = CreateFrame("Button", nil, TitlebarContainer)
-    settingBtn:SetSize(45,45) 
-    settingBtn:SetPoint("RIGHT", pinBtn, "LEFT", 10, 0)
+    -- -- [2. 셋팅 버튼: 톱니 아이콘 형태]
+    -- local settingBtn = CreateFrame("Button", nil, TitlebarContainer)
+    -- settingBtn:SetSize(45,45) 
+    -- settingBtn:SetPoint("RIGHT", pinBtn, "LEFT", 10, 0)
 
-    local settingTex = settingBtn:CreateTexture(nil, "ARTWORK")
-    settingTex:SetSize(35, 35) 
-    settingTex:SetPoint("CENTER", settingBtn, "CENTER", 0, 0)
-    settingTex:SetTexture([[Interface\AddOns\RaidLeaderTool\Assets\Icons\settingGray]])
-    settingTex:SetVertexColor(1, 1, 1, 0.8)
-    settingBtn.tex = settingTex 
-    -- 하이라이트 효과 (마우스 올리면 밝아짐)
-    settingBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+    -- local settingTex = settingBtn:CreateTexture(nil, "ARTWORK")
+    -- settingTex:SetSize(35, 35) 
+    -- settingTex:SetPoint("CENTER", settingBtn, "CENTER", 0, 0)
+    -- settingTex:SetTexture([[Interface\AddOns\RaidLeaderTool\Assets\Icons\settingGray]])
+    -- settingTex:SetVertexColor(1, 1, 1, 0.8)
+    -- settingBtn.tex = settingTex 
+    -- -- 하이라이트 효과 (마우스 올리면 밝아짐)
+    -- settingBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
 
-    settingBtn:SetScript("OnClick", function()
+    -- settingBtn:SetScript("OnClick", function()
 
-        self:UpdateSynergyVisibility()
+    --     self:UpdateSynergyVisibility()
         
-        rlt:CreateSynergySettingUI()
-    end)
+    --     rlt:CreateSynergySettingUI()
+    -- end)
 
     -- 타이틀바 텍스트
     local titleText1 = TitlebarContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
