@@ -63,6 +63,10 @@
         "CR_AVOIDANCE",
         "CR_VERSATILITY_DAMAGE_TAKEN",
         "class",
-        "GetUnitName"
+        "GetUnitName",
+        "SetRaidTargetIconTexture",
+        "CompactRaidFrameContainer",
+        "MEMBERS_PER_RAID_GROUP",
+        "PartyFrame"
     ]
 }

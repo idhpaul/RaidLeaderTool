@@ -305,6 +305,39 @@ function rlt:SlashCommandExecute()
     if AceConfigDialog.OpenFrames[ADDON_NAME] then AceConfigDialog:Close(ADDON_NAME) else AceConfigDialog:Open(ADDON_NAME) end
 end
 
+local function CustomStatusText(frame)
+
+    if not frame.displayedUnit or not frame.statusText then return end
+
+    if not frame.deathBg then
+        frame.deathBg = frame:CreateTexture(nil, "BACKGROUND", nil, 7)
+        frame.deathBg:SetAllPoints(frame.background)
+        frame.deathBg:SetColorTexture(1, 0.3, 0.3, 0.6)
+    end
+
+    -- 사망 여부에 따른 처리
+    if UnitIsDeadOrGhost(frame.displayedUnit) then
+        --print("죽은 사람 있어요")
+        frame.deathBg:Show()
+        frame.statusText:SetTextColor(1, 1, 1)
+    else
+        frame.deathBg:Hide()
+    end
+end
+
+local function CustomHealAbsorb(frame)
+
+    if not frame.myHealAbsorbOverlay then return end
+
+    if frame.myHealAbsorbOverlay then
+        -- 힐밴 색상 변경(+ 배경 색상)
+        frame.myHealAbsorb:SetVertexColor(1, 0, 0)
+        -- 힐밴 색상 변경(+ 문양 색상)
+        frame.myHealAbsorbOverlay:SetVertexColor(1, 1, 1, 0.8)
+    end
+
+end
+
 local function UpdateNameColor(frame)
     if not frame or frame:IsForbidden() then return end
     
@@ -314,11 +347,14 @@ local function UpdateNameColor(frame)
         return 
     end
     
-    -- 1. 이름 텍스트 설정 (외곽선 + 직업 색상)
+    -- 1. 이름 텍스트 설정 (글자 크기 + 외곽선 + 직업 색상)
     local nameText = frame.name
     if nameText and nameText.SetFont then
         local fontPath, fontSize, fontFlags = nameText:GetFont()
-        
+
+        -- 글자 크기
+        fontSize = 16
+
         -- 외곽선 추가
         if not fontFlags or not fontFlags:find("OUTLINE") then
             nameText:SetFont(fontPath, fontSize, "OUTLINE")
@@ -353,6 +389,101 @@ local function UpdateNameColor(frame)
     end
 end
 
+local markers = {}
+local activeMarkers = {}
+
+-- 스캔할 대상 프레임 목록을 한 번만 가져오는 함수 (매번 배열을 새로 만들지 않음)
+local function GetFramesToScan()
+    local frames = {}
+    
+    -- 1. 파티 프레임 (Compact)
+    for i = 1, 5 do 
+        if _G["CompactPartyFrameMember"..i] then table.insert(frames, _G["CompactPartyFrameMember"..i]) end 
+    end
+    -- 2. 일반 파티 프레임
+    if PartyFrame and PartyFrame.MemberFrames then
+        for _, pf in ipairs(PartyFrame.MemberFrames) do table.insert(frames, pf) end
+    end
+    -- 3. 공격대 프레임 (Compact)
+    for i = 1, 40 do 
+        if _G["CompactRaidFrame"..i] then table.insert(frames, _G["CompactRaidFrame"..i]) end 
+    end
+    -- 4. 공격대 그룹 프레임
+    for g = 1, 8 do
+        for m = 1, 5 do
+            local rf = _G["CompactRaidGroup"..g.."Member"..m]
+            if rf then table.insert(frames, rf) end
+        end
+    end
+    
+    return frames
+end
+
+-- 징표를 업데이트하는 핵심 함수
+local function UpdateRaidMarkers()
+    --if not RMD_DB then return end
+    
+    -- 기존 활성화 테이블 초기화 (메모리 재사용)
+    wipe(activeMarkers)
+    
+    local framesToScan = GetFramesToScan()
+
+    for _, frame in ipairs(framesToScan) do
+        local unit = frame.displayedUnit or frame.unit
+        -- 프레임이 보이고, 유닛이 존재할 때만 징표 인덱스 확인
+        local index = (frame:IsVisible() and unit) and GetRaidTargetIndex(unit) or nil
+        
+        if index then
+            if not markers[frame] then
+                -- 프레임 생성 및 설정 (최초 1회만 실행됨)
+                local m = CreateFrame("Frame", nil, frame)
+                m:SetFrameStrata("MEDIUM") 
+                -- 기존 frame보다 1단계 위로 고정 (OnUpdate처럼 매번 실행 안 해도 됨)
+                m:SetFrameLevel(frame:GetFrameLevel() + 1)
+                
+                local tex = m:CreateTexture(nil, "BORDER")
+                tex:SetAllPoints()
+                tex:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons")
+                m.tex = tex
+                
+                markers[frame] = m
+            end
+
+            local iconFrame = markers[frame]
+            local fName = frame:GetName() or ""
+            local isRaid = string.find(fName, "Raid")
+            --local set = isRaid and RMD_DB.raid or RMD_DB.party
+            
+            -- 위치 및 크기 설정
+            iconFrame:SetSize(16, 16)
+            iconFrame:SetPoint("CENTER", frame, "CENTER", 0, 0)
+            SetRaidTargetIconTexture(iconFrame.tex, index)
+            
+            if not iconFrame:IsShown() then iconFrame:Show() end
+            
+            -- 순정 징표 숨기기
+            if frame.RaidTargetIcon and frame.RaidTargetIcon:GetAlpha() ~= 0 then
+                frame.RaidTargetIcon:SetAlpha(0)
+            end
+            
+            activeMarkers[frame] = true
+        else
+            -- 징표가 없는 유닛의 순정 징표 복원
+            if frame.RaidTargetIcon and frame.RaidTargetIcon:GetAlpha() == 0 then
+                frame.RaidTargetIcon:SetAlpha(1)
+            end
+        end
+    end
+
+    -- 더 이상 징표가 없는 프레임의 커스텀 아이콘 숨기기
+    for frame, iconFrame in pairs(markers) do
+        if not activeMarkers[frame] then
+            if iconFrame:IsShown() then iconFrame:Hide() end
+        end
+    end
+end
+
+
 -- 1. 데이터를 담아둘 외부 변수
 local groupSpecData = {}
 
@@ -368,6 +499,8 @@ function rlt:OnEnable()
     self:RegisterEvent("PLAYER_REGEN_ENABLED", function() self:UpdateSynergyVisibility() end)
     self:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED", function() self:UpdateSynergyVisibility() end)
     self:RegisterEvent("LFG_LIST_ENTRY_EXPIRED_TIMEOUT")
+    self:RegisterEvent("RAID_TARGET_UPDATE")
+
 
     if not IsInGroup() and not C_LFGList.HasActiveEntryInfo() then
         self.db.global.optPartyJoinTimestamp = 0
@@ -380,7 +513,6 @@ function rlt:OnEnable()
     end
 
     LFGListFrame.CategorySelection.StartGroupButton:HookScript("OnClick", function(self)
-	    --print("(CategorySelection)파티 만들기 버튼 누름")
 
         if rlt.db.global.optGlobalEnable and rlt.db.global.optRecruitmentMemo then
             rlt:UpdateAndShowMemo()
@@ -391,7 +523,7 @@ function rlt:OnEnable()
     end)
 
     LFGListFrame.EntryCreation.ListGroupButton:HookScript("OnClick", function(self)
-	    --print("(EntryCreation)파티 등록 버튼 누름")
+
         if rlt.LFGRecruitmentMemoFrame.frame then 
             rlt.LFGRecruitmentMemoFrame.frame:Hide()
             rlt.LFGRecruitmentMemoFrame.editBox:ClearFocus() -- 포커스 해제 추가
@@ -402,7 +534,7 @@ function rlt:OnEnable()
     end)
 
     LFGListFrame.EntryCreation.CancelButton:HookScript("OnClick", function(self)
-	    --print("(EntryCreation)뒤로가기 버튼 누름")
+
         if rlt.LFGRecruitmentMemoFrame.frame then 
             rlt.LFGRecruitmentMemoFrame.frame:Hide()
             rlt.LFGRecruitmentMemoFrame.editBox:ClearFocus() -- 포커스 해제 추가
@@ -416,14 +548,16 @@ function rlt:OnEnable()
     end)
 
     PVEFrame:HookScript("OnHide", function(self)
-        --print("PVEFrame이 닫혔습니다.")
+
         if rlt.LFGRecruitmentMemoFrame.frame then 
             rlt.LFGRecruitmentMemoFrame.frame:Hide()
             rlt.LFGRecruitmentMemoFrame.editBox:ClearFocus() -- 포커스 해제 추가
         end
     end)
 
-    --hooksecurefunc("CompactUnitFrame_UpdateName",UpdateNameColor)
+    hooksecurefunc("CompactUnitFrame_UpdateName",UpdateNameColor)
+    hooksecurefunc("CompactUnitFrame_UpdateHealPrediction",CustomHealAbsorb)
+    hooksecurefunc("CompactUnitFrame_UpdateStatusText",CustomStatusText)
 
     LibSpecialization.RegisterGroup(rlt, function(specId, role, position, playerName, talents)
         groupSpecData[playerName] = {
@@ -431,7 +565,7 @@ function rlt:OnEnable()
             role = role,
             position = position -- "MELEE" 또는 "RANGED"
         }
-        --print(string.format("[LibSpec] %s 정보 업데이트 완료!(specID : %d), (role : %s), (position : %s)", playerName,specId,role,position))
+        --print(string.format("[LibSpec] %s 정보 업데이트 완료! (specID : %d), (role : %s), (position : %s)", playerName,specId,role,position))
     end)
 
 end
@@ -443,6 +577,10 @@ end
 
 rlt.lastLfgAlertTime = 0
 rlt.lastApplicantCount = 0
+
+function rlt:RAID_TARGET_UPDATE()
+    UpdateRaidMarkers()
+end
 
 function rlt:LFG_LIST_APPLICANT_UPDATED()
 
@@ -1025,26 +1163,26 @@ function rlt:CreateSynergyUI()
         end
     end)
 
-    -- -- [2. 셋팅 버튼: 톱니 아이콘 형태]
-    -- local settingBtn = CreateFrame("Button", nil, TitlebarContainer)
-    -- settingBtn:SetSize(45,45) 
-    -- settingBtn:SetPoint("RIGHT", pinBtn, "LEFT", 10, 0)
+    -- [2. 셋팅 버튼: 톱니 아이콘 형태]
+    local settingBtn = CreateFrame("Button", nil, TitlebarContainer)
+    settingBtn:SetSize(45,45) 
+    settingBtn:SetPoint("RIGHT", pinBtn, "LEFT", 10, 0)
 
-    -- local settingTex = settingBtn:CreateTexture(nil, "ARTWORK")
-    -- settingTex:SetSize(35, 35) 
-    -- settingTex:SetPoint("CENTER", settingBtn, "CENTER", 0, 0)
-    -- settingTex:SetTexture([[Interface\AddOns\RaidLeaderTool\Assets\Icons\settingGray]])
-    -- settingTex:SetVertexColor(1, 1, 1, 0.8)
-    -- settingBtn.tex = settingTex 
-    -- -- 하이라이트 효과 (마우스 올리면 밝아짐)
-    -- settingBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+    local settingTex = settingBtn:CreateTexture(nil, "ARTWORK")
+    settingTex:SetSize(35, 35) 
+    settingTex:SetPoint("CENTER", settingBtn, "CENTER", 0, 0)
+    settingTex:SetTexture([[Interface\AddOns\RaidLeaderTool\Assets\Icons\settingGray]])
+    settingTex:SetVertexColor(1, 1, 1, 0.8)
+    settingBtn.tex = settingTex 
+    -- 하이라이트 효과 (마우스 올리면 밝아짐)
+    settingBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
 
-    -- settingBtn:SetScript("OnClick", function()
+    settingBtn:SetScript("OnClick", function()
 
-    --     self:UpdateSynergyVisibility()
+        self:UpdateSynergyVisibility()
         
-    --     rlt:CreateSynergySettingUI()
-    -- end)
+        rlt:CreateSynergySettingUI()
+    end)
 
     -- 타이틀바 텍스트
     local titleText1 = TitlebarContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
